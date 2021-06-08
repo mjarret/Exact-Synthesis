@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <iostream>
 #include <cmath>
+#include <stdint.h>
 #include "Z2.hpp"
 
 /**
@@ -9,7 +10,7 @@
  * @param b sqrt(2) part of numerator
  * @param c log_2 of the denominator
  */
-Z2::Z2(const int a, const int b, const int c){
+Z2::Z2(const int8_t a, const int8_t b, const int8_t c){
     val[0] = a;
     val[1] = b;
     val[2] = c;
@@ -37,9 +38,9 @@ Z2::Z2(){
  * @return summation the sum of other and *this
  */
 Z2 Z2::operator+(Z2& other){
-    int k = std::max(val[2], other[2]);
-    int* scaled0 = scale(k);
-    int* scaled1 = other.scale(k);
+    int8_t k = std::max(val[2], other[2]);
+    int8_t* scaled0 = scale(k);
+    int8_t* scaled1 = other.scale(k);
     Z2 summation = Z2(scaled0[0]+scaled1[0], scaled0[1]+scaled1[1], k);
     return summation;
 }
@@ -50,9 +51,9 @@ Z2 Z2::operator+(Z2& other){
  * @return *this reference to this object, onto which other has been added
  */
 Z2& Z2::operator+=(Z2& other){
-    int k = std::max(val[2], other[2]);
-    int* scaled0 = scale(k);
-    int* scaled1 = other.scale(k);
+    int8_t k = std::max(val[2], other[2]);
+    int8_t* scaled0 = scale(k);
+    int8_t* scaled1 = other.scale(k);
     val[0] = scaled0[0] + scaled1[0];
     val[1] = scaled0[1] + scaled1[1];
     val[2] = k;
@@ -75,9 +76,9 @@ Z2 Z2::operator-(){
  * @return summation the subtraction *this - other
  */
 Z2 Z2::operator-(Z2& other){
-    int k = std::max(val[2], other[2]);
-    int* scaled0 = scale(k);
-    int* scaled1 = other.scale(k);
+    int8_t k = std::max(val[2], other[2]);
+    int8_t* scaled0 = scale(k);
+    int8_t* scaled1 = other.scale(k);
     Z2 subtraction = Z2(scaled0[0]-scaled1[0], scaled0[1]-scaled1[1], k);
     return subtraction;
 }
@@ -105,7 +106,7 @@ bool Z2::operator==(const Z2& other){
  * @param other reference to Z2 object to be compared to
  * @return whether or not the entries of the two Z2s are equal
  */
-bool Z2::operator==(const int& i){return *this == Z2(i,0,0);}
+bool Z2::operator==(const int8_t& i){return *this == Z2(i,0,0);}
 bool Z2::operator!=(const Z2& other){return !(*this == other);}
 
 /**
@@ -117,14 +118,14 @@ bool Z2::operator<(Z2& other){
     Z2 diff = *this - other;                                        // Find difference and store as Z2
     if(diff.val[0] < 0) {                                    
         if(diff.val[1] <= 0) return true;                           // a<0 and b<=0 means that diff < 0
-        unsigned int a2 = diff.val[0]*diff.val[0];                  // compute a^2    
-        unsigned int b2 = (diff.val[1]*diff.val[1]) << 1;           // compute 2b^2
+        int8_t a2 = diff.val[0]*diff.val[0];                  // compute a^2    
+        int8_t b2 = (diff.val[1]*diff.val[1]) << 1;           // compute 2b^2
         if(a2 > b2) return true;                                    // a<0, b>0, and a^2 > 2 b^2 implies that a+sqrt(2)b <0
         return false;                                               // a<0, b>0, and a^2 <= 2 b^2 implies that a+sqrt(2)b >= 0
     }
     if(diff.val[1] >= 0) return false;                              // a>=0 and b>=0 means that diff >=0
-    unsigned int a2 = diff.val[0]*diff.val[0];                      // compute a^2    
-    unsigned int b2 = (diff.val[1]*diff.val[1]) << 1;               // compute 2b^2
+    int8_t a2 = diff.val[0]*diff.val[0];                      // compute a^2    
+    int8_t b2 = (diff.val[1]*diff.val[1]) << 1;               // compute 2b^2
     if(a2 < b2) return true;                                        // a>0, b<0, and a^2 < 2b^2 implies that a + sqrt(2) b < 0
     return false;                                                   // a>0, b<0, and a^2 >= 2b^2 implies that a+sqrt(2)b >= 0
 }
@@ -138,9 +139,9 @@ bool Z2::operator<=(Z2& other) {return !(*this > other);}
  * @return true if this < other and false otherwise
  */
 const bool Z2::operator<(const Z2& other) const{
-    int k = std::max(val[2],other[2]);
-    int a = val[0] << (k-val[2]);
-    int b = val[1] << (k-val[2]);
+    int8_t k = std::max(val[2],other[2]);
+    int8_t a = val[0] << (k-val[2]);
+    int8_t b = val[1] << (k-val[2]);
     a = a - (other[0] << (k-other[2]));
     b = b - (other[1] << (k-other[2]));
     if(a < 0) {                                    
@@ -162,12 +163,12 @@ const bool Z2::operator<(const Z2& other) const{
  * @param other reference to an integer
  * @return true if this < other and false otherwise
  */
-bool Z2::operator<(const int & i){
+bool Z2::operator<(const int8_t& i){
     Z2 tmp = Z2(i,0,0);
     return *this < tmp;
 }  
 
-bool Z2::operator>(const int & i){
+bool Z2::operator>(const int8_t& i){
     Z2 tmp = Z2(i,0,0);
     return *this > tmp;
 }  
@@ -208,9 +209,9 @@ Z2& Z2::reduce(){
  * @param k the exponent to scale to
  * @return reg the workspace array containing the scaled values
  */
-int* Z2::scale(const int& k){
+int8_t* Z2::scale(const int8_t& k){
     // scales a Z2's entries to a given denominator exponent
-    int expdiff = k - val[2];
+    int8_t expdiff = k - val[2];
     reg[0] = val[0] << expdiff;
     reg[1] = val[1] << expdiff;
     reg[2] = k;
@@ -223,7 +224,7 @@ int* Z2::scale(const int& k){
  * @param z reference to Z2 object to be displayed
  * @returns reference ostream with the Z2's display form appended
  */
-std::ostream& operator<<(std::ostream& os, const Z2& z){
+/*std::ostream& operator<<(std::ostream& os, const Z2& z){
     if(!z[0]) {
         if(!z[1]) return (os << 0);
         os << z[1] << "\u221A2";
@@ -243,4 +244,4 @@ std::ostream& operator<<(std::ostream& os, const Z2& z){
     }
     os << '(' << z[0] << '+' << z[1] << "\u221A2)e" << -z[2];
     return os;
-}
+}*/

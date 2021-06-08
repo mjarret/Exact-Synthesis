@@ -5,6 +5,7 @@
 #include <sstream>
 #include <bitset>
 #include <iterator>
+#include <stdint.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
 
@@ -16,7 +17,7 @@
  * @return -1 if first < second, 0 if equal, 1 if first > second
  */
 bool lexLess (Z2 first[6],Z2 second[6]) {
-    for(int i = 0; i < 6 ; i++) {
+    for(int8_t i = 0; i < 6 ; i++) {
         if(first[i] < second[i]) return true;
         if(second[i] < first[i]) return false;
     }
@@ -29,10 +30,10 @@ bool lexLess (Z2 first[6],Z2 second[6]) {
  * 
  * @param first 
  * @param second 
- * @return int 
+ * @return int8_t 
  */
 int lexComp (const Z2 first[6], const Z2 second[6]) {
-    for(int i = 0; i < 6 ; i++) {
+    for(int8_t i = 0; i < 6 ; i++) {
         if(first[i] < second[i]) return -1;
         if(second[i] < first[i]) return 1;
     }
@@ -44,8 +45,8 @@ int lexComp (const Z2 first[6], const Z2 second[6]) {
  *
  */
 SO6::SO6(){
-    for(int i=0; i<6; i++){
-        for(int j=0; j<6; j++)
+    for(int8_t i=0; i<6; i++){
+        for(int8_t j=0; j<6; j++)
             arr[i][j]=Z2();
     }
     hist = {};
@@ -55,9 +56,9 @@ SO6::SO6(){
  * Constructor that initializes arbitrary matrix with arbitrary name
  * @param t the object history
  */
-SO6::SO6(std::vector<int> t){
-    for(int i=0; i<6; i++){
-        for(int j=0; j<6; j++)
+SO6::SO6(std::vector<int8_t> t){
+    for(int8_t i=0; i<6; i++){
+        for(int8_t j=0; j<6; j++)
             arr[i][j]=Z2();
     }
     hist = t;
@@ -68,10 +69,10 @@ SO6::SO6(std::vector<int> t){
  * @param a array of Z2 that the SO6 will take as values
  * @param t the object history
  */
-SO6::SO6(Z2 a[6][6], std::vector<int> t){
+SO6::SO6(Z2 a[6][6], std::vector<int8_t> t){
     // initializes SO6's entries according to a
-    for(int col = 0; col<6; col++){
-        for(int row = 0; row<6; row++) {
+    for(int8_t col = 0; col<6; col++){
+        for(int8_t row = 0; row<6; row++) {
             arr[col][row] = a[row][col];
         }
     }
@@ -91,9 +92,9 @@ SO6 SO6::operator*(SO6& other){
     Z2 next;
     
     // Compute product
-    for(int row=0; row<6; row++){
-        for(int col = 0; col<6; col++){
-            for(int k = 0; k<6; k++){
+    for(int8_t row=0; row<6; row++){
+        for(int8_t col = 0; col<6; col++){
+            for(int8_t k = 0; k<6; k++){
                 // next = arr[row][k]*other[col][k];            // This transpose * other
                 next = arr[k][row]*other[col][k];            // This not transpose * other
                 // prod(col,row) += next;
@@ -113,8 +114,8 @@ SO6 SO6::transpose() {
 }
 
 void SO6::fixSign() {
-    for(int col = 0; col<6; col++){
-        for(int row = 0; row < 6; row++) {
+    for(int8_t col = 0; col<6; col++){
+        for(int8_t row = 0; row < 6; row++) {
             if(arr[col][row] < 0) {
                 while(row<6) arr[col][row++] = -arr[col][row];
             }
@@ -131,20 +132,20 @@ void SO6::lexOrder() {
     std::vector<Z2*> myvector(myZ2,myZ2+6);
     std::sort (myvector.begin(), myvector.end(),lexLess);
     Z2 arr2[6][6];
-    for(int i = 0; i<6; i++) {
-        for(int j = 0; j<6; j++) {
+    for(int8_t i = 0; i<6; i++) {
+        for(int8_t j = 0; j<6; j++) {
             arr2[i][j] = (myvector.at(i))[j];
         }
     }
-    for(int i = 0; i<6; i++) {
-        for(int j = 0; j<6; j++) {
+    for(int8_t i = 0; i<6; i++) {
+        for(int8_t j = 0; j<6; j++) {
             arr[i][j] = arr2[i][j];
         }
     }
 }
 
 bool SO6::operator<(const SO6 &other) const {
-    for(int col = 0; col < 6; col++) {
+    for(int8_t col = 0; col < 6; col++) {
         switch (lexComp((*this)[col],other[col])) {   
             case -1: return true;
             case 1: return false;
@@ -160,8 +161,8 @@ bool SO6::operator<(const SO6 &other) const {
 bool SO6::operator==(SO6 &other) {
     // SO6 are the same if they have the same triangle
     // TODO: lower right triangle seems super fast, but can try out others                
-    for(int col = 5; col>-1 ; col--) {                                
-        for(int row = 5; row>5-col-1; row--) {      
+    for(int8_t col = 5; col>-1 ; col--) {                                
+        for(int8_t row = 5; row>5-col-1; row--) {      
             if(arr[col][row]!=other[col][row]) return false;
         }
     }
@@ -175,8 +176,8 @@ bool SO6::operator==(SO6 &other) {
  * @returns reference ostream with the matrix's display form appended
  */
 std::ostream& operator<<(std::ostream& os, const SO6& m){
-    for (int i : m.hist) {
-        os << std::hex << i;//<< " ";
+    for (int8_t i : m.hist) {
+        os << std::hex << +i;//<< " ";
     }
     //os << "\n";
 /*     for(int row = 0; row<6; row++){

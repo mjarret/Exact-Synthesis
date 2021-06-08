@@ -20,6 +20,7 @@
 #include <string>
 #include <sstream>
 #include <functional>
+#include <stdint.h>
 #include <stdlib.h>
 #include <omp.h>
 #include "Z2.hpp"
@@ -28,13 +29,13 @@
 
 using namespace std;
 
-const int numThreads = 1;
-const int tCount = 5;
+const int8_t numThreads = 1;
+const int8_t tCount = 6;
 
 //Turn this on if you want to read in saved data
 const bool tIO = false;
 //If tIO true, choose which tCount to begin generating from:
-const int genFrom = 6;
+const int8_t genFrom = tCount;
 
 //Saves every saveInterval iterations
 const int saveInterval = 1000000;
@@ -42,7 +43,7 @@ const int saveInterval = 1000000;
 
 SO6 identity() {
     SO6 I;
-    for(int k =0; k<6; k++) {
+    for(int8_t k =0; k<6; k++) {
         I(k,5-k) = Z2(1,0,0);
     }
     return I;
@@ -55,7 +56,7 @@ SO6 identity() {
  * @param matNum the index of the SO6 object in the base vector
  * @return T[i+1,j+1]
  */
-SO6 tMatrix(int i, int j, int matNum){
+SO6 tMatrix(int8_t i, int8_t j, int8_t matNum){
     // Generates the T Matrix T[i+1, j+1]
     SO6 t({matNum});
     int sign;
@@ -63,7 +64,7 @@ SO6 tMatrix(int i, int j, int matNum){
         sign = 1;
     else
         sign = -1;
-    for(int k=0; k<6; k++){
+    for(int8_t k=0; k<6; k++){
         t(k,k) = Z2(1,0,0);
     }
     t(i,i) = Z2(0,1,1);
@@ -129,7 +130,7 @@ vector<vector<SO6>> prodHelper(vector<vector<SO6>>& batch, vector<SO6>& tmats){
     int numLDES = batch.size()+1;
     SO6 prod;
     vector<vector<SO6>> toReturn(numLDES);
-    for(int i = 0; i<15; i++){
+    for(int8_t i = 0; i<15; i++){
         for(int j = 0; j<batch.size(); j++){
             for(SO6 m : batch[j]){
                 prod = tmats[i]*m;
@@ -167,13 +168,13 @@ vector<vector<SO6>> genAllProds(vector<vector<SO6>>& TminusOne, vector<SO6>& tma
     vector<vector<vector<SO6>>> threadinput = divideVect(TminusOne);
     future<vector<vector<SO6>>> threads[numThreads];
     vector<vector<SO6>> prod[numThreads];
-    for(int i = 0; i<numThreads; i++)
+    for(int8_t i = 0; i<numThreads; i++)
         threads[i] = async(launch::async, prodHelper, ref(threadinput[i]), ref(tmats));
-    for(int i = 0; i<numThreads; i++){
+    for(int8_t i = 0; i<numThreads; i++){
         prod[i] = threads[i].get();
     }
     vector<vector<SO6>> toReturn(prod[0].size());
-    for(int i = 0; i<numThreads; i++)
+    for(int8_t i = 0; i<numThreads; i++)
         toReturn = mergedVect(toReturn, prod[i]);
     return(toReturn);
 }
@@ -222,7 +223,7 @@ void pastCheckHelper(vector<SO6>& vec, vector<SO6>& past, int a, int b){
     }
 }
 
-set<SO6> fileRead(int tc, vector<SO6> tbase) {
+set<SO6> fileRead(int8_t tc, vector<SO6> tbase) {
     ifstream tfile;
     tfile.open(("T" + to_string(tc) + ".txt").c_str());
     if(!tfile) {
@@ -233,7 +234,7 @@ set<SO6> fileRead(int tc, vector<SO6> tbase) {
     char hist;
     string mat; //Now unused except as a buffer
     long i = 0;
-    vector<int> tmp;
+    vector<int8_t> tmp;
     SO6 m;
     //First line contains data for which iteration to start from, so skip it
     getline(tfile, mat);
@@ -242,7 +243,7 @@ set<SO6> fileRead(int tc, vector<SO6> tbase) {
         tmp.push_back((hist >= 'a') ? (hist - 'a' + 10) : (hist - '0'));
         if (++i%tc == 0) {
             m = tbase.at(tmp.at(tmp.size() - 1));
-            for(int k = tmp.size()-2; k > -1; k--) {
+            for(int8_t k = tmp.size()-2; k > -1; k--) {
                 m = tbase.at(tmp.at(k))*m;
             }
             tset.insert(m);
@@ -252,11 +253,11 @@ set<SO6> fileRead(int tc, vector<SO6> tbase) {
     return tset;
 }
 
-void writeResults(int i, int tsCount, int currentCount, set<SO6> next) {
+void writeResults(int8_t i, int8_t tsCount, int8_t currentCount, set<SO6> next) {
     auto start = chrono::high_resolution_clock::now();
     string fileName = "T" + to_string(i+1) + ".tmp";
     ofstream write = ofstream(fileName);
-    write << tsCount << ' ' << currentCount << '\n';
+    write << +tsCount << ' ' << +currentCount << '\n';
     for(SO6 n : next) write<<n;
     write.close();
     std::rename(("T" + to_string(i+1) + ".tmp").c_str(), ("T" + to_string(i+1) + ".txt").c_str());
@@ -371,7 +372,7 @@ int main(){
     //in the order Andrew wanted
     SO6 I = identity();
     set<SO6> ts;
-    for(int i = 0; i<15; i++) {
+    for(int8_t i = 0; i<15; i++) {
         if(i<5)       ts.insert(tMatrix(0,i+1,i));
         else if(i<9)  ts.insert(tMatrix(1, i-3,i));
         else if(i<12) ts.insert(tMatrix(2, i-6,i));
@@ -385,11 +386,11 @@ int main(){
     set<SO6> prior;            
     set<SO6> current({I});
     set<SO6> next;
-    int start = 0;
+    int8_t start = 0;
 
     
     vector<SO6> tsv; //t count 1 matrices
-    for(int i = 0; i<15; i++){
+    for(int8_t i = 0; i<15; i++){
         if(i<5)
             tsv.push_back(tMatrix(0,i+1,i));
         else if(i<9)
@@ -408,15 +409,15 @@ int main(){
         start = genFrom - 1;
     }
 
-    for(int i = start; i<tCount; i++){
+    for(int8_t i = start; i<tCount; i++){
         std::cout<<"\nBeginning T-Count "<<(i+1)<<"\n";
         auto start = chrono::high_resolution_clock::now();
         next.clear();
         // Main loop here
         ifstream tfile;
-        int tsCount = 0;
+        int8_t tsCount = 0;
         int currentCount = 0;
-        int save = 0;
+        long save = 0;
         tfile.open(("T" + to_string(i + 1) + ".txt").c_str());
         if (!tIO || !tfile) {
             if (tfile) {
