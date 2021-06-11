@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <iostream>
-#include <cmath>
+// #include <cmath>
 #include <stdint.h>
 #include "Z2.hpp"
 
@@ -11,13 +11,17 @@
  * @param c log_2 of the denominator
  */
 Z2::Z2(const int8_t a, const int8_t b, const int8_t c){
+    // val[2] = c<<2;
+    // if(c%2) {
+    //     val[0] = b;
+    //     val[1] = a<<1;
+    //     reduce();
+    //     return;
+    // }
     val[0] = a;
     val[1] = b;
     val[2] = c;
-    reg[0] = 0;
-    reg[1] = 0;
-    reg[2] = 0;
-    Z2::reduce();
+    reduce();
 }
 
 /**
@@ -27,9 +31,6 @@ Z2::Z2(){
     val[0] = 0;
     val[1] = 0;
     val[2] = 0;
-    reg[0] = 0;
-    reg[1] = 0;
-    reg[2] = 0;
 }
 
 /**
@@ -38,11 +39,9 @@ Z2::Z2(){
  * @return summation the sum of other and *this
  */
 Z2 Z2::operator+(Z2& other){
-    int8_t k = std::max(val[2], other[2]);
-    int8_t* scaled0 = scale(k);
-    int8_t* scaled1 = other.scale(k);
-    Z2 summation = Z2(scaled0[0]+scaled1[0], scaled0[1]+scaled1[1], k);
-    return summation;
+    Z2 tmp = *this;
+    tmp += other;
+    return tmp;
 }
 
 /**
@@ -51,15 +50,53 @@ Z2 Z2::operator+(Z2& other){
  * @return *this reference to this object, onto which other has been added
  */
 Z2& Z2::operator+=(Z2& other){
-    int8_t k = std::max(val[2], other[2]);
-    int8_t* scaled0 = scale(k);
-    int8_t* scaled1 = other.scale(k);
-    val[0] = scaled0[0] + scaled1[0];
-    val[1] = scaled0[1] + scaled1[1];
-    val[2] = k;
+    int8_t exp_diff = val[2]-other.val[2];
+    if(exp_diff > 0) {
+        val[0] += other.val[0]<<exp_diff;
+        val[1] += other.val[1]<<exp_diff;
+        reduce();
+        return *this;
+    }
+    val[0] <<= -exp_diff;
+    val[1] <<= -exp_diff;
+    val[0] += other.val[0];
+    val[1] += other.val[1];
+    val[2] = other.val[2];
     reduce();
     return *this;
 }
+// Z2& Z2::operator+=(Z2& other){
+//     int8_t exp_diff = val[2]-other.val[2];
+//     bool is_odd = exp_diff%2;
+//     if(exp_diff%2 && exp_diff < 0) {
+//         val[0] += other.val[1] << ((exp_diff+is_odd)>>1 + 1);
+//         val[1] += other.val[0] << (exp_diff+is_odd)>>1;
+//         reduce();
+//         return *this;
+//     }
+//     if(exp_diff%2 && exp_diff > 0) {
+//         val[0] <<= ((exp_diff+is_odd)>>1+1);
+//         val[1] <<= (exp_diff+is_odd)>>1;
+//         val[0] += other.val[1];
+//         val[1] += other.val[0];
+//         reduce();
+//         return *this;
+//     }
+//     if(exp_diff > 0) {
+//         val[0] += other.val[0]<<(exp_diff>>1);
+//         val[1] += other.val[1]<<(exp_diff>>1);
+//         reduce();
+//         return *this;
+//     }
+//     val[0] <<= ((-exp_diff)>>1);
+//     val[1] <<= ((-exp_diff)>>1);
+//     val[0] += other.val[0];
+//     val[1] += other.val[1];
+//     val[2] = other.val[2];
+//     reduce();
+//     return *this;
+// }
+
 
 /**
  * Overloads the - operator for Z2
@@ -76,11 +113,9 @@ Z2 Z2::operator-(){
  * @return summation the subtraction *this - other
  */
 Z2 Z2::operator-(Z2& other){
-    int8_t k = std::max(val[2], other[2]);
-    int8_t* scaled0 = scale(k);
-    int8_t* scaled1 = other.scale(k);
-    Z2 subtraction = Z2(scaled0[0]-scaled1[0], scaled0[1]-scaled1[1], k);
-    return subtraction;
+    Z2 tmp = -other;
+    tmp += *this;
+    return tmp;
 }
 
 /**
@@ -140,10 +175,10 @@ bool Z2::operator<=(Z2& other) {return !(*this > other);}
  */
 const bool Z2::operator<(const Z2& other) const{
     int8_t k = std::max(val[2],other[2]);
-    int8_t a = val[0] << (k-val[2]);
-    int8_t b = val[1] << (k-val[2]);
-    a = a - (other[0] << (k-other[2]));
-    b = b - (other[1] << (k-other[2]));
+    int8_t a = val[0] << ((k-val[2])/2);
+    int8_t b = val[1] << ((k-val[2])/2);
+    a = a - (other[0] << ((k-other[2]))/2);
+    b = b - (other[1] << ((k-other[2]))/2);
     if(a < 0) {                                    
         if(b <= 0) return true;                           // a<0 and b<=0 means that diff < 0
         a*=a;                  // compute a^2    
@@ -201,47 +236,14 @@ Z2& Z2::reduce(){
         val[1] >>= 1;
         val[2]--;
     }
+    // while(val[0]%2 == 0 && val[1]%2 == 0){
+    //     val[0] >>= 1;
+    //     val[1] >>= 1;
+    //     val[2] -= 2;
+    // }
+    // if(val[0]%2) {
+    //     val[0] >>= 1;
+    //     val[2] --;
+    // }
     return *this;
 }
-
-/**
- * Scales the Z2 to a different denominator exponent
- * @param k the exponent to scale to
- * @return reg the workspace array containing the scaled values
- */
-int8_t* Z2::scale(const int8_t& k){
-    // scales a Z2's entries to a given denominator exponent
-    int8_t expdiff = k - val[2];
-    reg[0] = val[0] << expdiff;
-    reg[1] = val[1] << expdiff;
-    reg[2] = k;
-    return reg;
-}
- 
-/**
- * Overloads << function for Z2
- * @param os reference to ostream object needed to implement <<
- * @param z reference to Z2 object to be displayed
- * @returns reference ostream with the Z2's display form appended
- */
-/*std::ostream& operator<<(std::ostream& os, const Z2& z){
-    if(!z[0]) {
-        if(!z[1]) return (os << 0);
-        os << z[1] << "\u221A2";
-        if(!z[2]) return os;
-        os << "e" << -z[2];
-        return os;
-    }
-    if(!z[1]) {
-        os << z[0];
-        if(!z[2]) return os;
-        os << "e" << -z[2];
-        return os;
-    }
-    if(!z[2]) {
-        os << z[0] << '+' << z[1] << "\u221A2";
-        return os;    
-    }
-    os << '(' << z[0] << '+' << z[1] << "\u221A2)e" << -z[2];
-    return os;
-}*/

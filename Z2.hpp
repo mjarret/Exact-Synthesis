@@ -4,8 +4,18 @@ class Z2{
 public:
     Z2(const int8_t,const int8_t,const int8_t); // the ints paseed form the entries of val
     Z2();// the entries of val are all 0
-    inline int8_t& operator[](int8_t i){return val[i];} //returns ith component of val
-    inline const int8_t& operator[](int8_t i) const{return val[i];} //does the same but for const Z2
+    inline int8_t& operator[](int8_t i){
+        // return val[i];
+    if(i == 2) return val[2];
+        i += (2*val[2])%2;
+        return val[i%2];
+    } //returns ith component of val
+    inline const int8_t& operator[](int8_t i) const{
+        if(i==2) return val[2];
+        i = (i+(2*val[2])%2)%2;
+        // i = (i+val[2]%2)%2;
+        return val[i];
+    } //does the same but for const Z2
     Z2 operator+(Z2&); //handles addition
     Z2& operator+=(Z2&); //handles +=
     Z2 operator-(); //handles negation
@@ -27,9 +37,10 @@ public:
     Z2 abs(); //Returns the absolute value
     //friend std::ostream& operator<<(std::ostream&,const Z2&); //display
     // float toFloat(); //Returns the Z2 object as a float
-    int8_t getLDE() {return 0;}; //gives the denominator exponent of sqrt(2).
+    int8_t getLDE() {return ((-val[2])<<1) - ((val[0]+1)%2);}; // gives the denominator exponent in base sqrt(2). Note that this is a positive number when val[2] is negative!
     void negate(){val[0]=-val[0];val[1]=-val[1];}
+    static const Z2 inverse_root2() {return Z2(0,1,1); }
+    static const Z2 one() {return Z2(1,0,0);}
 private:
     int8_t val[3]; //values of the Z2
-    int8_t reg[3]; //workspace array
 };

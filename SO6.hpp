@@ -25,6 +25,7 @@ public:
     // inline float normFloat() { return norm.toFloat(); }
     void genLDE(); //generates LDE, called after multiplication and constructor
     friend std::ostream& operator<<(std::ostream&,const SO6&); //display
+    bool operator==(const SO6 &other) const;
 private:
     Z2 arr[6][6];
     std::vector<int8_t> hist;

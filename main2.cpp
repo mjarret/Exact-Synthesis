@@ -31,6 +31,8 @@ using namespace std;
 
 const int8_t numThreads = 1;
 const int8_t tCount = 6;
+const Z2 inverse_root2 = Z2::inverse_root2();
+const Z2 one = Z2::one();
 
 //Turn this on if you want to read in saved data
 const bool tIO = false;
@@ -44,8 +46,9 @@ const int saveInterval = 1000000;
 SO6 identity() {
     SO6 I;
     for(int8_t k =0; k<6; k++) {
-        I(k,5-k) = Z2(1,0,0);
+        I(k,k) = one;
     }
+    I.lexOrder();
     return I;
 }
 
@@ -58,19 +61,13 @@ SO6 identity() {
  */
 SO6 tMatrix(int8_t i, int8_t j, int8_t matNum){
     // Generates the T Matrix T[i+1, j+1]
-    SO6 t({matNum});
-    int sign;
-    if((i+1==j&&i<=4&&i>=0)||(j+1==i&&j<=4&&j>=0))
-        sign = 1;
-    else
-        sign = -1;
-    for(int8_t k=0; k<6; k++){
-        t(k,k) = Z2(1,0,0);
-    }
-    t(i,i) = Z2(0,1,1);
-    t(i,j) = Z2(0,-sign, 1);
-    t(j,i) = Z2(0, sign, 1);
-    t(j,j) = Z2(0,1,1);
+    SO6 t({matNum});                               
+    for(int8_t k = 0; k < 6; k++) t[k][k] = one;          // Initialize to the identity matrix
+    t[i][i] = inverse_root2;                              // Change the i,j cycle to appropriate 1/sqrt(2)
+    t[j][j] = inverse_root2;
+    t[i][j] = inverse_root2;
+    if(abs(i-j)!=1) t[i][j].negate();   
+    t[j][i] = -t[i][j];
     t.fixSign();
     t.lexOrder();
     return(t);
@@ -225,7 +222,7 @@ void pastCheckHelper(vector<SO6>& vec, vector<SO6>& past, int a, int b){
 
 set<SO6> fileRead(int8_t tc, vector<SO6> tbase) {
     ifstream tfile;
-    tfile.open(("T" + to_string(tc) + ".txt").c_str());
+    tfile.open(("data/T" + to_string(tc) + ".txt").c_str());
     if(!tfile) {
         cout << "File does not exist.\n";
         exit(1);
@@ -255,15 +252,15 @@ set<SO6> fileRead(int8_t tc, vector<SO6> tbase) {
 
 void writeResults(int8_t i, int8_t tsCount, int8_t currentCount, set<SO6> next) {
     auto start = chrono::high_resolution_clock::now();
-    string fileName = "T" + to_string(i+1) + ".tmp";
+    string fileName = "data/T" + to_string(i+1) + ".tmp";
     ofstream write = ofstream(fileName);
     write << +tsCount << ' ' << +currentCount << '\n';
     for(SO6 n : next) write<<n;
     write.close();
-    std::rename(("T" + to_string(i+1) + ".tmp").c_str(), ("T" + to_string(i+1) + ".txt").c_str());
+    std::rename(("data/T" + to_string(i+1) + ".tmp").c_str(), ("data/T" + to_string(i+1) + ".txt").c_str());
     auto end = chrono::high_resolution_clock::now();
     auto ret = chrono::duration_cast<chrono::milliseconds>(end-start).count();
-    cout<<">>>Wrote T-Count "<<(i+1)<<" to 'T"<<(i+1)<<".txt' in " << ret << "ms\n";
+    cout<<">>>Wrote T-Count "<<(i+1)<<" to 'data/T"<<(i+1)<<".txt' in " << ret << "ms\n";
 }
 
 // bool isNone(SO6& toCheck){
@@ -277,83 +274,83 @@ void writeResults(int8_t i, int8_t tsCount, int8_t currentCount, set<SO6> next) 
  * @param numThreads the number of parallel processes to be ran
  */
 
-void pruneAllPerms(vector<vector<SO6>>& unReduced, vector<vector<SO6>>& tMinusTwo){
-    /*
-     * General Structure: examines each LDE separately, finds redundant matrices,
-     * marks them for deletion by changing their name to "None,"
-     * and then at the end of the method deletes them.
-     * Does this in two stages: First by comparing to the T-count 2 down,
-     * and then by comparing all of the matrices in the same T-count
-     */
+// void pruneAllPerms(vector<vector<SO6>>& unReduced, vector<vector<SO6>>& tMinusTwo){
+//     /*
+//      * General Structure: examines each LDE separately, finds redundant matrices,
+//      * marks them for deletion by changing their name to "None,"
+//      * and then at the end of the method deletes them.
+//      * Does this in two stages: First by comparing to the T-count 2 down,
+//      * and then by comparing all of the matrices in the same T-count
+//      */
 
-    //initializing relevant varaibles
-    std::thread threads[numThreads];
-    int numPerThread;
+//     //initializing relevant varaibles
+//     std::thread threads[numThreads];
+//     int numPerThread;
 
-    //Self-Checking
-    //iterating over all LDEs
-    for(int i = 0; i<unReduced.size(); i++){
-        for(int j = 0; j < tMinusTwo.size(); j++) {
-            unReduced[i].insert(unReduced[i].end(), tMinusTwo[j].begin(), tMinusTwo[j].end());
-        }
-        
-        auto durr = chrono::high_resolution_clock::now();
-        std::sort(unReduced[i].begin(),unReduced[i].end());
-        auto ret1 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
-        
-        durr = chrono::high_resolution_clock::now();
-        unReduced[i].erase(unique(unReduced[i].begin(),unReduced[i].end()),unReduced[i].end());    
-        auto ret2 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
-        std::cout << "\tunReduced[" << i << "]: " "Sort/Erase duplicates took: " << ret1 << "/" << ret2 << "ms\n";
-    }
-    // for(int i = 0; i<unReduced.size();i++) {
-    //     set<SO6> s; 
-    //     unsigned size = unReduced[i].size(); 
-    //     for(unsigned j = 0; j <size; j++) s.insert((unReduced[i])[j]);
-    //     unReduced[i].assign(s.begin(),s.end());
-    // }    
-    // // Past-Checking
-    // //iterating over every relevant LDE
-    // for(int i = 0; i<tMinusTwo.size(); i++){
-    //     if(unReduced[i].size()== 0) continue;
-    //     numPerThread = unReduced[i].size()/numThreads;
+//     //Self-Checking
+//     //iterating over all LDEs
+//     for(int i = 0; i<unReduced.size(); i++){
+//         for(int j = 0; j < tMinusTwo.size(); j++) {
+//             unReduced[i].insert(unReduced[i].end(), tMinusTwo[j].begin(), tMinusTwo[j].end());
+//         }
 
-    //     //distributing elements evenly to the threads and pruning
-    //     for(int j = 0; j<numThreads-1; j++){
-    //         threads[j] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), j*numPerThread, (j+1)*numPerThread);
-    //     }
-    //     threads[numThreads-1] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), numThreads*numPerThread, unReduced[i].size());
+//         auto durr = chrono::high_resolution_clock::now();
+//         std::sort(unReduced[i].begin(),unReduced[i].end());
+//         auto ret1 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
 
-    //     //waiting for all threads to complete
-    //     for(int j = 0; j<numThreads; j++)
-    //         threads[j].join();
-    // }
+//         durr = chrono::high_resolution_clock::now();
+//         unReduced[i].erase(unique(unReduced[i].begin(),unReduced[i].end()),unReduced[i].end());
+//         auto ret2 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
+//         std::cout << "\tunReduced[" << i << "]: " "Sort/Erase duplicates took: " << ret1 << "/" << ret2 << "ms\n";
+//     }
+//     // for(int i = 0; i<unReduced.size();i++) {
+//     //     set<SO6> s;
+//     //     unsigned size = unReduced[i].size();
+//     //     for(unsigned j = 0; j <size; j++) s.insert((unReduced[i])[j]);
+//     //     unReduced[i].assign(s.begin(),s.end());
+//     // }
+//     // // Past-Checking
+//     // //iterating over every relevant LDE
+//     // for(int i = 0; i<tMinusTwo.size(); i++){
+//     //     if(unReduced[i].size()== 0) continue;
+//     //     numPerThread = unReduced[i].size()/numThreads;
 
-    //     //iterating over all entries, and then marking all entries equivalent to them to their right for deletion
-    //     for(int j = 0; j<unReduced[i].size(); j++){
+//     //     //distributing elements evenly to the threads and pruning
+//     //     for(int j = 0; j<numThreads-1; j++){
+//     //         threads[j] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), j*numPerThread, (j+1)*numPerThread);
+//     //     }
+//     //     threads[numThreads-1] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), numThreads*numPerThread, unReduced[i].size());
 
-    //         //skipping past entries marked as "None"
-    //         while(unReduced[i][j].getName() == "None" && (j<unReduced.size()-1)) ++j;
-    //         //Finding the number per thread. Notice this is integer division, so numPerThread*numThreads<= (toReturn[i].size()-j-1)
-    //         numPerThread = (unReduced[i].size()-j-1)/numThreads;
+//     //     //waiting for all threads to complete
+//     //     for(int j = 0; j<numThreads; j++)
+//     //         threads[j].join();
+//     // }
 
-    //         //allocating to threads
-    //         //will turn equivalent matrices to "None" name
-    //         for(int k = 0; k<numThreads-1; k++){
-    //             //looking through toReturn[i] in parallel
-    //             threads[k] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+k*numPerThread, j+1+(k+1)*numPerThread);
-    //         }
-    //         threads[numThreads-1] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+(numThreads-1)*numPerThread, unReduced[i].size());
+//     //     //iterating over all entries, and then marking all entries equivalent to them to their right for deletion
+//     //     for(int j = 0; j<unReduced[i].size(); j++){
 
-    //         //waiting for all to be performed
-    //         for(int k = 0; k<numThreads; k++){
-    //             threads[k].join();
-    //         }
-    //     }
-    //     //Removing all elements marked for deletion ("None" name)
-    //     unReduced[i].erase(std::remove_if(unReduced[i].begin(), unReduced[i].end(), isNone), unReduced[i].end());
-    // }
-}
+//     //         //skipping past entries marked as "None"
+//     //         while(unReduced[i][j].getName() == "None" && (j<unReduced.size()-1)) ++j;
+//     //         //Finding the number per thread. Notice this is integer division, so numPerThread*numThreads<= (toReturn[i].size()-j-1)
+//     //         numPerThread = (unReduced[i].size()-j-1)/numThreads;
+
+//     //         //allocating to threads
+//     //         //will turn equivalent matrices to "None" name
+//     //         for(int k = 0; k<numThreads-1; k++){
+//     //             //looking through toReturn[i] in parallel
+//     //             threads[k] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+k*numPerThread, j+1+(k+1)*numPerThread);
+//     //         }
+//     //         threads[numThreads-1] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+(numThreads-1)*numPerThread, unReduced[i].size());
+
+//     //         //waiting for all to be performed
+//     //         for(int k = 0; k<numThreads; k++){
+//     //             threads[k].join();
+//     //         }
+//     //     }
+//     //     //Removing all elements marked for deletion ("None" name)
+//     //     unReduced[i].erase(std::remove_if(unReduced[i].begin(), unReduced[i].end(), isNone), unReduced[i].end());
+//     // }
+// }
 
 //vector<int> findRedundantIndices(SO6 unReducedOneLDE[], vector<SO6>& tMinusTwo, int numThreads){
 //    int indices[unReduced.size()];
@@ -379,11 +376,9 @@ int main(){
         else if(i<14) ts.insert(tMatrix(3, i-8,i));
         else          ts.insert(tMatrix(4,5,i));
     }
-    auto tafter = chrono::high_resolution_clock::now();
 
 
-    
-    set<SO6> prior;            
+    set<SO6> prior;
     set<SO6> current({I});
     set<SO6> next;
     int8_t start = 0;
@@ -418,7 +413,7 @@ int main(){
         int8_t tsCount = 0;
         int currentCount = 0;
         long save = 0;
-        tfile.open(("T" + to_string(i + 1) + ".txt").c_str());
+        tfile.open(("data/T" + to_string(i + 1) + ".txt").c_str());
         if (!tIO || !tfile) {
             if (tfile) {
                 tfile.close();
@@ -472,7 +467,7 @@ int main(){
             }
         }
         // End main loop
-        auto end = chrono::high_resolution_clock::now();   
+        auto end = chrono::high_resolution_clock::now();
         prior = current;                                    // T++
         current = next;                                     // T++
 
