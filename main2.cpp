@@ -1,12 +1,13 @@
 /**
  * T Operator Product Generation Main File
  * @file main.cpp
+ * @author Swan Klein
  * @author Connor Mooney
  * @author Michael Jarret
  * @author Andrew Glaudell
  * @author Jacob Weston
  * @author Mingzhen Tian
- * @version 6/1/21
+ * @version 6/12/21
  */
 
 #include <algorithm>
@@ -30,7 +31,7 @@
 using namespace std;
 
 const int8_t numThreads = 1;
-const int8_t tCount = 6;
+const int8_t tCount = 5;
 const Z2 inverse_root2 = Z2::inverse_root2();
 const Z2 one = Z2::one();
 
@@ -40,7 +41,7 @@ const bool tIO = false;
 const int8_t genFrom = tCount;
 
 //Saves every saveInterval iterations
-const int saveInterval = 1000000;
+const int saveInterval = 50000;
 
 
 SO6 identity() {
@@ -229,12 +230,9 @@ set<SO6> fileRead(int8_t tc, vector<SO6> tbase) {
     }
     set<SO6> tset;
     char hist;
-    string mat; //Now unused except as a buffer
     long i = 0;
     vector<int8_t> tmp;
     SO6 m;
-    //First line contains data for which iteration to start from, so skip it
-    getline(tfile, mat);
     while(tfile.get(hist)) {
         //Convert hex character to integer
         tmp.push_back((hist >= 'a') ? (hist - 'a' + 10) : (hist - '0'));
@@ -250,116 +248,21 @@ set<SO6> fileRead(int8_t tc, vector<SO6> tbase) {
     return tset;
 }
 
-void writeResults(int8_t i, int8_t tsCount, int8_t currentCount, set<SO6> next) {
+// This appends next to the T file
+void writeResults(int8_t i, int8_t tsCount, long currentCount, set<SO6> &next) {
     auto start = chrono::high_resolution_clock::now();
-    string fileName = "data/T" + to_string(i+1) + ".tmp";
-    ofstream write = ofstream(fileName);
-    write << +tsCount << ' ' << +currentCount << '\n';
+    string fileName = "data/T" + to_string(i+1) + "index.txt";
+    fstream write = fstream(fileName, std::ios_base::out);
+    write << +tsCount << ' ' << +currentCount;
+    write.close();
+    fileName = "data/T" + to_string(i+1) + ".txt";
+    write = fstream(fileName, std::ios_base::app);
     for(SO6 n : next) write<<n;
     write.close();
-    std::rename(("data/T" + to_string(i+1) + ".tmp").c_str(), ("data/T" + to_string(i+1) + ".txt").c_str());
     auto end = chrono::high_resolution_clock::now();
     auto ret = chrono::duration_cast<chrono::milliseconds>(end-start).count();
     cout<<">>>Wrote T-Count "<<(i+1)<<" to 'data/T"<<(i+1)<<".txt' in " << ret << "ms\n";
 }
-
-// bool isNone(SO6& toCheck){
-//     return(toCheck.getName()=="None");
-// }
-
-/**
- * Takes the unpruned LDE distribution of a T-Count, and removes all permutations
- * @param unReduced the vector of vectors of SO6, sorted by LDE, to be checked
- * @param tMinusTwo the vector the distribution of T-count N-2
- * @param numThreads the number of parallel processes to be ran
- */
-
-// void pruneAllPerms(vector<vector<SO6>>& unReduced, vector<vector<SO6>>& tMinusTwo){
-//     /*
-//      * General Structure: examines each LDE separately, finds redundant matrices,
-//      * marks them for deletion by changing their name to "None,"
-//      * and then at the end of the method deletes them.
-//      * Does this in two stages: First by comparing to the T-count 2 down,
-//      * and then by comparing all of the matrices in the same T-count
-//      */
-
-//     //initializing relevant varaibles
-//     std::thread threads[numThreads];
-//     int numPerThread;
-
-//     //Self-Checking
-//     //iterating over all LDEs
-//     for(int i = 0; i<unReduced.size(); i++){
-//         for(int j = 0; j < tMinusTwo.size(); j++) {
-//             unReduced[i].insert(unReduced[i].end(), tMinusTwo[j].begin(), tMinusTwo[j].end());
-//         }
-
-//         auto durr = chrono::high_resolution_clock::now();
-//         std::sort(unReduced[i].begin(),unReduced[i].end());
-//         auto ret1 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
-
-//         durr = chrono::high_resolution_clock::now();
-//         unReduced[i].erase(unique(unReduced[i].begin(),unReduced[i].end()),unReduced[i].end());
-//         auto ret2 = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now()-durr).count();
-//         std::cout << "\tunReduced[" << i << "]: " "Sort/Erase duplicates took: " << ret1 << "/" << ret2 << "ms\n";
-//     }
-//     // for(int i = 0; i<unReduced.size();i++) {
-//     //     set<SO6> s;
-//     //     unsigned size = unReduced[i].size();
-//     //     for(unsigned j = 0; j <size; j++) s.insert((unReduced[i])[j]);
-//     //     unReduced[i].assign(s.begin(),s.end());
-//     // }
-//     // // Past-Checking
-//     // //iterating over every relevant LDE
-//     // for(int i = 0; i<tMinusTwo.size(); i++){
-//     //     if(unReduced[i].size()== 0) continue;
-//     //     numPerThread = unReduced[i].size()/numThreads;
-
-//     //     //distributing elements evenly to the threads and pruning
-//     //     for(int j = 0; j<numThreads-1; j++){
-//     //         threads[j] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), j*numPerThread, (j+1)*numPerThread);
-//     //     }
-//     //     threads[numThreads-1] = thread(pastCheckHelper, ref(unReduced[i]), ref(tMinusTwo[i]), numThreads*numPerThread, unReduced[i].size());
-
-//     //     //waiting for all threads to complete
-//     //     for(int j = 0; j<numThreads; j++)
-//     //         threads[j].join();
-//     // }
-
-//     //     //iterating over all entries, and then marking all entries equivalent to them to their right for deletion
-//     //     for(int j = 0; j<unReduced[i].size(); j++){
-
-//     //         //skipping past entries marked as "None"
-//     //         while(unReduced[i][j].getName() == "None" && (j<unReduced.size()-1)) ++j;
-//     //         //Finding the number per thread. Notice this is integer division, so numPerThread*numThreads<= (toReturn[i].size()-j-1)
-//     //         numPerThread = (unReduced[i].size()-j-1)/numThreads;
-
-//     //         //allocating to threads
-//     //         //will turn equivalent matrices to "None" name
-//     //         for(int k = 0; k<numThreads-1; k++){
-//     //             //looking through toReturn[i] in parallel
-//     //             threads[k] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+k*numPerThread, j+1+(k+1)*numPerThread);
-//     //         }
-//     //         threads[numThreads-1] = thread(selfCheckHelper, ref(unReduced[i]), ref(unReduced[i][j]), j+1+(numThreads-1)*numPerThread, unReduced[i].size());
-
-//     //         //waiting for all to be performed
-//     //         for(int k = 0; k<numThreads; k++){
-//     //             threads[k].join();
-//     //         }
-//     //     }
-//     //     //Removing all elements marked for deletion ("None" name)
-//     //     unReduced[i].erase(std::remove_if(unReduced[i].begin(), unReduced[i].end(), isNone), unReduced[i].end());
-//     // }
-// }
-
-//vector<int> findRedundantIndices(SO6 unReducedOneLDE[], vector<SO6>& tMinusTwo, int numThreads){
-//    int indices[unReduced.size()];
-//    int numPerThread = unReduced.size()/numThreads;
-//    thread threads[numThreads];
-//    for(int i =0; i < numThreads -1; i++){
-//        threads[i] = thread(checkPerm)
-//    }
-//}
 
 int main(){
 
@@ -381,6 +284,8 @@ int main(){
     set<SO6> prior;
     set<SO6> current({I});
     set<SO6> next;
+    set<SO6> append;
+    SO6 m;
     int8_t start = 0;
 
     
@@ -411,23 +316,34 @@ int main(){
         // Main loop here
         ifstream tfile;
         int8_t tsCount = 0;
-        int currentCount = 0;
+        int size;
+        long currentCount = 0;
         long save = 0;
-        tfile.open(("data/T" + to_string(i + 1) + ".txt").c_str());
+        tfile.open(("data/T" + to_string(i + 1) + "index.txt").c_str());
         if (!tIO || !tfile) {
             if (tfile) {
                 tfile.close();
             }
             for(SO6 t : ts) {
                 for(SO6 curr : current) {
-                    next.insert(t*curr);     // New product list for T + 1 stored as next
+                    size = next.size();
+                    m = t*curr;
+                    next.insert(m);     // New product list for T + 1 stored as next
+                    if (size != next.size()) {
+                        append.insert(m);
+                    }
                     save++;
                     currentCount++;
-                    if(save % saveInterval == 0) {
-                        writeResults(i, tsCount, currentCount, next);
+                    if(save == saveInterval) {
+                        for(SO6 p : prior) {
+                            next.erase(p);
+                            append.erase(p);
+                        }
+                        writeResults(i, tsCount, currentCount, append);
+                        save = 0;
+                        append.clear();
                     }
                 }
-                for(SO6 p : prior) next.erase(p);                // Erase T-1
                 tsCount++;
                 currentCount = 0;
             }
@@ -451,15 +367,23 @@ int main(){
                 t = *titr;
                 while (citr != current.end()) {
                     curr = *citr;
-                    next.insert(t*curr);
+                    m = t*curr;
+                    next.insert(m);
+                    if (size != next.size()) {
+                        append.insert(m);
+                    }
                     save++;
                     citr++;
                     currentCount++;
-                    if(save % saveInterval == 0) {
-                        writeResults(i, tsCount, currentCount, next);
+                    if(save == saveInterval) {
+                        for(SO6 p : prior) {
+                            append.erase(p);
+                        }
+                        writeResults(i, tsCount, currentCount, append);
+                        save = 0;
+                        append.clear();
                     }
                 }
-                for(SO6 p : prior) next.erase(p);
                 titr++;
                 tsCount++;
                 currentCount = 0;
@@ -467,6 +391,10 @@ int main(){
             }
         }
         // End main loop
+        for(SO6 p : prior) {
+            next.erase(p);                   // Erase T - 1
+            append.erase(p);
+        }
         auto end = chrono::high_resolution_clock::now();
         prior = current;                                    // T++
         current = next;                                     // T++
@@ -476,7 +404,8 @@ int main(){
         std::cout << ">>>Found " << next.size() << " new matrices in " << ret << "ms\n";
 
         // Write results out
-        writeResults(i, tsCount, currentCount, next);
+        writeResults(i, tsCount, currentCount, append);
+        append.clear();
     }
     chrono::duration<double> timeelapsed = chrono::high_resolution_clock::now() - tbefore;
     std::cout<< "\nTotal time elapsed: "<<chrono::duration_cast<chrono::milliseconds>(timeelapsed).count()<<"ms\n";

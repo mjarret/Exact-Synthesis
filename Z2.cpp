@@ -175,10 +175,10 @@ bool Z2::operator<=(Z2& other) {return !(*this > other);}
  */
 const bool Z2::operator<(const Z2& other) const{
     int8_t k = std::max(val[2],other[2]);
-    int8_t a = val[0] << ((k-val[2])/2);
-    int8_t b = val[1] << ((k-val[2])/2);
-    a = a - (other[0] << ((k-other[2]))/2);
-    b = b - (other[1] << ((k-other[2]))/2);
+    int8_t a = val[0] << (k-val[2]);
+    int8_t b = val[1] << (k-val[2]);
+    a = a - (other[0] << (k-other[2]));
+    b = b - (other[1] << (k-other[2]));
     if(a < 0) {                                    
         if(b <= 0) return true;                           // a<0 and b<=0 means that diff < 0
         a*=a;                  // compute a^2    
@@ -246,4 +246,17 @@ Z2& Z2::reduce(){
     //     val[2] --;
     // }
     return *this;
+}
+
+Z2 Z2::pattern(int LDE) {
+    switch(getLDE() - LDE) {
+        case 0:
+            return Z2(val[0]%2, val[1]%2, val[2]);
+            break;
+        case 1:
+            return Z2(0, val[1]%2, val[2]);
+            break;
+        default:
+            return Z2();
+    }
 }

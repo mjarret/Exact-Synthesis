@@ -199,3 +199,24 @@ std::ostream& operator<<(std::ostream& os, const SO6& m){
     os << "\n"; */
     return os;
 }
+
+int8_t SO6::genLDE() {
+    int8_t LDE = -1;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            if (arr[i][j].getLDE() > LDE) LDE = arr[i][j].getLDE();
+        }
+    }
+}
+
+SO6 SO6::residue() {
+    int8_t LDE = genLDE();
+    SO6 res;
+    res.hist = hist;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            res.arr[i][j] = arr[i][j].pattern(LDE);
+        }
+    }
+    return res;
+}

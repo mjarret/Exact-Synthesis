@@ -41,6 +41,7 @@ public:
     void negate(){val[0]=-val[0];val[1]=-val[1];}
     static const Z2 inverse_root2() {return Z2(0,1,1); }
     static const Z2 one() {return Z2(1,0,0);}
+    Z2 pattern(int LDE); //Extracts the residue pattern for this entry
 private:
     int8_t val[3]; //values of the Z2
 };
