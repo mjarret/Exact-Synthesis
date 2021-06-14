@@ -36,7 +36,7 @@ const Z2 inverse_root2 = Z2::inverse_root2();
 const Z2 one = Z2::one();
 
 //Turn this on if you want to read in saved data
-const bool tIO = false;
+const bool tIO = true;
 //If tIO true, choose which tCount to begin generating from:
 const int8_t genFrom = tCount;
 
@@ -45,7 +45,7 @@ const int saveInterval = 50000;
 
 
 SO6 identity() {
-    SO6 I = SO6({-1});
+    SO6 I = SO6();
     for(int8_t k =0; k<6; k++) {
         I(k,k) = 1;
     }
@@ -164,7 +164,7 @@ int main(){
         tfile.open(("data/T" + to_string(i + 1) + "index.txt").c_str());
         if (!tIO || !tfile) {
             if (tfile) tfile.close();
-            remove(("data/T" + to_string(i + 1) + "index.txt").c_str());
+            remove(("data/T" + to_string(i + 1) + ".txt").c_str());
             for(SO6 t : tsv) {
                 for(SO6 curr : current) {
                     size = next.size();
@@ -187,11 +187,8 @@ int main(){
                 }
                 tsCount++;
                 currentCount = 0;
-                if(i == tCount -1) break;    // We only need one T matrix at the final T-count
+                //if(i == tCount -1) break;    // We only need one T matrix at the final T-count
             }
-            for(SO6 p : prior) next.erase(p); // Erase T-1
-            // Write results out
-            writeResults(i, tsv.size(), currentCount, append);
         }
         else {
             next = fileRead(i+1, tsv);
@@ -235,7 +232,6 @@ int main(){
                 currentCount = 0;
                 citr = current.begin();
             }
-            writeResults(i, tsv.size(), currentCount, append);
         }
         // End main loop
         for(SO6 p : prior) {
