@@ -31,7 +31,21 @@ bool lexLess (Z2 first[6],Z2 second[6]) {
  * @param second 
  * @return int8_t 
  */
+// int lexComp (const Z2 first[6], const Z2 second[6]) {
+//     for(int8_t i = 0; i < 6 ; i++) {
+//         if(first[i] < second[i]) return 1;
+//         if(second[i] < first[i]) return -1;
+//     }
+//     return 0;
+// }
 int lexComp (const Z2 first[6], const Z2 second[6]) {
+    // Z2 f[6],s[6];
+    // for(int i = 0; i<6; i++) {
+    //     f[i]=first[i];
+    //     s[i]=second[i];
+    // }
+    // if(lexLess(f,s)) return -1;
+    // if(lexLess(s,f)) return 1;
     for(int8_t i = 0; i < 6 ; i++) {
         if(first[i] < second[i]) return -1;
         if(second[i] < first[i]) return 1;
@@ -39,15 +53,16 @@ int lexComp (const Z2 first[6], const Z2 second[6]) {
     return 0;
 }
 
+
 /**
  * Basic constructor. Initializes Zero matrix.
  *
  */
 SO6::SO6(){
-    for(int8_t i=0; i<6; i++){
-        for(int8_t j=0; j<6; j++)
-            arr[i][j]=Z2();
-    }
+    // for(int8_t i=0; i<6; i++){
+    //     for(int8_t j=0; j<6; j++)
+    //         arr[i][j]=Z2();
+    // }
     hist = {};
 }
 
@@ -56,10 +71,10 @@ SO6::SO6(){
  * @param t the object history
  */
 SO6::SO6(std::vector<int8_t> t){
-    for(int8_t i=0; i<6; i++){
-        for(int8_t j=0; j<6; j++)
-            arr[i][j]=Z2();
-    }
+    // for(int8_t i=0; i<6; i++){
+    //     for(int8_t j=0; j<6; j++)
+    //         arr[i][j]=Z2();
+    // }
     hist = t;
 }
 
@@ -118,7 +133,7 @@ void SO6::fixSign() {
             if(arr[col][row] < 0) {
                 while(row<6) arr[col][row++] = -arr[col][row];
             }
-            else if(arr[col][row] == Z2()) continue;
+            else if(arr[col][row] == 0) continue;
             break;
         }
     }
@@ -144,7 +159,7 @@ void SO6::lexOrder() {
 }
 
 bool SO6::operator<(const SO6 &other) const {
-    for(int8_t col = 0; col < 6; col++) {
+    for(int8_t col = 0; col < 5; col++) {
         switch (lexComp((*this)[col],other[col])) {   
             case -1: return true;
             case 1: return false;
@@ -198,4 +213,25 @@ std::ostream& operator<<(std::ostream& os, const SO6& m){
     }
     os << "\n"; */
     return os;
+}
+
+int8_t SO6::genLDE() {
+    int8_t LDE = -1;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            if (arr[i][j].getLDE() > LDE) LDE = arr[i][j].getLDE();
+        }
+    }
+}
+
+SO6 SO6::residue() {
+    int8_t LDE = genLDE();
+    SO6 res;
+    res.hist = hist;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            res.arr[i][j] = arr[i][j].pattern(LDE);
+        }
+    }
+    return res;
 }
