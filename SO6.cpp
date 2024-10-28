@@ -4,242 +4,138 @@
 #include <stdint.h>
 #include <vector>
 #include <algorithm>
+#include <bitset>
+#include <bit>
+#include <variant>
+#include <ranges>
+#include <compare>
+#include <concepts>
+#include <omp.h>
+#include <boost/format.hpp>
 #include "SO6.hpp"
 #include "pattern.hpp"
 #include "Globals.hpp"
+#include "utils.hpp"
+#include <map>
+
+// Alias the values of std::strong_ordering for cleaner code
+constexpr auto Equal = std::strong_ordering::equal;
+constexpr auto Less = std::strong_ordering::less;
+constexpr auto Greater = std::strong_ordering::greater;
+constexpr auto Equivalent = std::strong_ordering::equivalent;
 
 /**
  * Method to compare two Z2 arrays of length 6 lexicographically
- * we are given the guarantee that the first nonzero element in the row is non-negative
+ * We are given the guarantee that the first nonzero element in the row is non-negative
  * @param first array of Z2 of length 6
  * @param second array of Z2 of length 6
  * @return -1 if first < second, 0 if equal, 1 if first > second
  */
-int8_t SO6::lexicographical_compare(const Z2 first[6],const Z2 second[6])
-{
-    bool first_is_negative = false;
-    bool second_is_negative = false;
-    int row;
-    // We search for the first nonzero row of first and if on the way we encounter a nonzero row of second, 
-    // we immediately claim second is larger. If both are nonzero, we compare them
-    // the goal is to "fix" the sign convention of the row so that the entire
-    // column is sorted such that the top element is positive by multiplying everything by -1
-    for (row = 0; row < 6; row++)
-    {
-        if (first[row].intPart == 0) {
-            if(second[row].intPart == 0) {
-                continue;
-            }
-            return 1;
-        }
-        if (second[row].intPart == 0) {
-            return -1;
-        }
-
-        // Now both first and second are nonzero
-        // first_is_negative = first[row].is_negative();
-        first_is_negative = (first[row].intPart < 0) ;
-        second_is_negative = (second[row].intPart < 0);
-        break;
-    }
-
-    // compare remaining rows until return
-    if(!first_is_negative) {
-        if(!second_is_negative) {
-        while (row < 6) {
-                if(first[row] == second[row]) {
-                    row++;
-                    continue;
-                }
-                if(second[row] < first[row]) return -1;
-                return 1;
-            }
-            return 0;
-        }
-        for (row; row < 6; row++)
-            {
-                if(first[row] == -second[row]) continue;
-                if(-second[row] < first[row]) return -1;
-                return 1;
-            }
-        return 0;
-    }
-    //first is negative now
-    if(!second_is_negative) {
-        for (row; row < 6; row++) {
-                if(-first[row] == second[row]) continue;
-                if(second[row] < -first[row]) return -1;
-                return 1;
-            }
-        return 0;
-    }
-
-    //both are negative
-    for (int i = row; i < 6; i++)    {
-        if(first[i] == second[i]) continue;
-        if(-second[i] < -first[i]) return -1;
-        return 1;
-    }
-    return 0;
-}
-
-/**
- * Method to compare two Z2 arrays of length 6 lexicographically
- * we are given the guarantee that the first nonzero element in the row is non-negative
- * @param first array of Z2 of length 6
- * @param second array of Z2 of length 6
- * @return -1 if first < second, 0 if equal, 1 if first > second
- */
-// int8_t SO6::lexicographical_compare(const int &col1,const int & col2)
+// std::strong_ordering SO6::lex_order(const Z2 first[6], const Z2 second[6]) const
 // {
-//     bool first_is_negative = false;
-//     bool second_is_negative = false;
-//     int row;
-//     // We search for the first nonzero row of first and if on the way we encounter a nonzero row of second, 
-//     // we immediately claim second is larger. If both are nonzero, we compare them
-//     // the goal is to "fix" the sign convention of the row so that the entire
-//     // column is sorted such that the top element is positive by multiplying everything by -1
-//     counter_zero++;
-//     for (row = 0; row < 6; row++)
-//     {
-//         if (arr[get_index(row,col1)].intPart == 0) {
-//             if(arr[get_index(row,col2)].intPart == 0) {
-//                 continue;
-//             }
-//             return 1;
-//         }
-//         if (arr[get_index(row,col2)].intPart == 0) {
-//             return -1;
-//         }
-//         counter_even++;
-//         // Now both first and second are nonzero
-//         // first_is_negative = arr[get_index(col1,row)].is_negative();
-//         first_is_negative = (arr[get_index(row,col1)].intPart < 0) ;
-//         second_is_negative = (arr[get_index(row,col2)].intPart < 0);
-//         break;
-//     }
-
-//     // compare remaining rows until return
-//     if(!first_is_negative) {
-//         if(!second_is_negative) {
-//         while (row < 6) {
-//                 if(arr[get_index(row,col1)] == arr[get_index(row,col2)]) {
-//                     row++;
-//                     continue;
-//                 }
-//                 if(arr[get_index(row,col2)] < arr[get_index(row,col1)]) return -1;
-//                 return 1;
-//             }
-//             return 0;
-//         }
-//         for (row; row < 6; row++)
-//             {
-//                 if(arr[get_index(row,col1)] == -arr[get_index(row,col2)]) continue;
-//                 if(-arr[get_index(row,col2)] < arr[get_index(row,col1)]) return -1;
-//                 return 1;
-//             }
-//         return 0;
-//     }
-//     //first is negative now
-//     if(!second_is_negative) {
-//         for (row; row < 6; row++) {
-//                 if(-arr[get_index(row,col1)] == arr[get_index(row,col2)]) continue;
-//                 if(arr[get_index(row,col2)] < -arr[get_index(row,col1)]) return -1;
-//                 return 1;
-//             }
-//         return 0;
-//     }
-
-//     //both are negative
-//     for (int i = row; i < 6; i++)    {
-//         if(arr[get_index(i,col1)] == arr[get_index(i,col2)]) continue;
-//         if(-arr[get_index(i,col2)] < -arr[get_index(i,col1)]) return -1;
-//         return 1;
-//     }
-//     return 0;
+//     return utils::lex_order(first,first+6, second,second+6);
 // }
 
-bool SO6::lexicographical_less(const int &col1,const int & col2)
-{
-    bool first_is_negative = false;
-    bool second_is_negative = false;
-    int row;
+// Canonical form function (recursive DP approach)
+/**
+ * @brief Computes the canonical form of a given SO6 matrix.
+ *
+ * This function recursively computes the canonical form of an SO6 matrix by 
+ * iterating over all possible columns and assuming the rows are fixed. It uses 
+ * memoization to store intermediate results and avoid redundant calculations.
+ *
+ * @param A The SO6 matrix for which the canonical form is to be computed.
+ * @param dp A 2D vector used for memoization to store intermediate results.
+ * @param size The current size of the matrix being processed.
+ * @param diag_pos_enforced A boolean flag to enforce positive diagonal elements.
+ * @return The maximum value of the canonical form for the given matrix.
+ */
 
-    for (row = 0; row < 6; row++)
-    {
-        if (arr[get_index(row,col1)].intPart == 0) {
-            if(arr[get_index(row,col2)].intPart == 0) {
-                continue;
-            }
-            return false;
-        }
-        if (arr[get_index(row,col2)].intPart == 0) {
-            return true;
-        }
-        // Now both first and second are nonzero
-        // first_is_negative = arr[get_index(col1,row)].is_negative();
-        first_is_negative = (arr[get_index(row,col1)].intPart < 0) ;
-        second_is_negative = (arr[get_index(row,col2)].intPart < 0);
-        break;
+void SO6::canonical_form_test() {
+    std::bitset<6> columns("111111");
+    std::unordered_map<std::bitset<6>, int> dp = {};
+    for (int i = 0; i < (1 << 6); ++i) {
+       dp[std::bitset<6>(i)] = -1;
+    }
+    for (int i = 0; i < 6; ++i) {
+        dp[std::bitset<6>(1 << i)] = i;
     }
 
-    // compare remaining rows until return
-    if(!first_is_negative) {
-        if(!second_is_negative) {
-            for (row; row < 6; ++row) {
-                    if(arr[get_index(row,col2)] < arr[get_index(row,col1)])  return true;
-                    if(arr[get_index(row,col1)] < arr[get_index(row,col2)]) return false;
-                }
-            return false;
+    auto x = this->get_pivot_column(columns, dp);
+    std::vector<int> sequence;
+    while (columns.any()) {
+        int memo_value = dp[columns];
+        sequence.push_back(memo_value);
+        columns.flip(memo_value);
+    }
+    
+    std::cout << "Canonical form: " << std::endl;
+    for (int i = 0; i < 6; ++i) {
+        std::cout << sequence[i] << " ";
+    }
+    unpermuted_print();
+}
+
+int SO6::get_pivot_column(std::bitset<6>& columns, std::unordered_map<std::bitset<6>, int>& memo) {
+    std::cout << "Considering submatrix: " << columns << std::endl;
+    unpermuted_print(columns);
+
+    // Memo already contains base cases. Return memo if non-empty
+    if (!memo[columns] == -1) return memo[columns]; 
+
+    int submatrix_size = columns.count();
+
+    // Lexicographically sort the row
+    std::vector<int> col;
+    for(int i = 0; i < 6; i++) {
+        if(columns.test(i)) {
+            col.push_back(i);
         }
-        for (row; row < 6; ++row) {
-                if(-arr[get_index(row,col2)] < arr[get_index(row,col1)])  return true;
-                if(arr[get_index(row,col1)] < -arr[get_index(row,col2)])  return false;
-            }
-        return false;
     }
 
-    //first is negative now
-    if(!second_is_negative) {
-        for (row; row < 6; ++row) {
-                    if(-arr[get_index(row,col1)] < arr[get_index(row,col2)]) return false;
-                    if(arr[get_index(row,col2)] < -arr[get_index(row,col1)]) return true;
-            }
-        return false;
+    int lex_row = 6 - submatrix_size;
+       
+    std::vector<int> pivots;
+    for(int i = 0; i < 6; ++i) {
+        if(!columns.test(i)) pivots.push_back(i);
     }
 
-    //both are negative
-    for (row; row < 6; ++row)    {
-        if(-arr[get_index(row,col1)] < -arr[get_index(row,col2)]) return false;
-        if(-arr[get_index(row,col2)] == -arr[get_index(row,col1)]) continue;
+    // Find best pivot column. Logic should sort/memoize it while finding the maximum
+    int pivot = *std::max_element(pivots.begin(), pivots.end(), [&](int a, int b) {
+        // return lex_order(a, b, columns, memo, lex_row);
         return true;
+    });
+
+    std::cout << "Pivot found.";
+    // Check if the pivot element corresponds to Z2(0,0,0)
+    if (get_lex_element(pivot, lex_row).intPart == 0) {
+        memo[columns] = -2;
+    } else {
+        memo[columns] = pivot;
     }
-    return false;
+    return memo[columns];
 }
 
-
-/**
- * Method to compare two Z2 arrays of length 6 lexicographically
- * @param first array of Z2 of length 6
- * @param second array of Z2 of length 6
- * @return -1 if first < second, 0 if equal, 1 if first > second
- */
-bool SO6::lexicographical_less(const Z2 first[6],const Z2 second[6])
-{
-    return (SO6::lexicographical_compare(first,second)<0);
+std::vector<int> get_permutation(const std::bitset<6>& columns, std::unordered_map<std::bitset<6>, std::vector<int>>& memo) {
+    if(memo.contains(columns)) return memo[columns]; // If it's already computed, return it
+    // Logic to compute the memo for a given column set.
+    // This is where you perform your submatrix computation if necessary.
+    // For the example, we'll return an empty vector.
+    return {};
 }
 
-// /**
-//  * Method to compare two Z2 arrays of length 6 lexicographically
-//  * @param first array of Z2 of length 6
-//  * @param second array of Z2 of length 6
-//  * @return -1 if first < second, 0 if equal, 1 if first > second
-//  */
-// bool SO6::lexicographical_less(const int &col1,const int &col2)
-// {
-//     return (lexicographical_compare(col1,col2)<0);
-// }
+bool SO6::submatrix_lex_less(std::vector<int> &left_columns, std::vector<int> &right_columns, int start_row) {
+    if (start_row == 6) return false;
 
+    // These were equal, move onto the next submatrix
+    std::vector<int> left_columns_copy = left_columns;
+    std::vector<int> right_columns_copy = right_columns;
+
+    left_columns_copy.erase(left_columns_copy.begin());
+    right_columns_copy.erase(right_columns_copy.begin());
+    // Recursively check the next submatrix
+    return submatrix_lex_less(left_columns_copy, right_columns_copy, start_row + 1);
+}
 
 /**
  * Basic constructor. Initializes Zero matrix.
@@ -247,6 +143,11 @@ bool SO6::lexicographical_less(const Z2 first[6],const Z2 second[6])
  */
 SO6::SO6()
 {  
+    for(int i = 0; i < 36; i++) {
+        arr[i] = Z2(0,0,0);
+    }
+    int equivalence_class_size = 1;
+
 }
 
 /**
@@ -260,6 +161,20 @@ SO6::SO6(Z2 other[6][6])
             *this[col][row]=other[col][row];
         }
     }
+}
+
+SO6::SO6(pattern &other)
+{
+    for (int col = 0; col < 6; col++) {
+        for (int row = 0; row < 6; row++) {
+            if (other.arr[col][row].first == 0 && other.arr[col][row].second == 0) {
+                continue;  // Skip this iteration if both `first` and `second` are zero
+            }
+            bool second_arg = other.arr[col][row].first == 0 ? other.arr[col][row].first : other.arr[col][row].second;
+            arr[(col << 2) + (col << 1) + row] = Z2(other.arr[col][row].first || other.arr[col][row].second, second_arg, other.arr[col][row].first);
+        }
+    }
+
 }
 
 // Something much faster than this would be a "multiply by T" method that explicitly does the matrix multiplication given a particular T matrix instead of trying to compute it naively
@@ -295,7 +210,6 @@ SO6 SO6::operator*(const SO6 &other) const
     return prod;
 }
 
-
 /**
  * Overloads the * operator with matrix multiplication for SO6 objects
  * @param other reference to pattern to be multiplied with (*this)
@@ -327,56 +241,29 @@ SO6 SO6::operator*(const pattern &other) const
     return prod;
 }
 
-
-/**
- * @brief Performs a left multiplication of this SO(6) matrix by a specific T matrix.
- *
- * This function multiplies the current SO(6) matrix by a T matrix identified by 
- * indices `i` and `j` and updates its internal state based on the parameter `p`. 
- * The operation is row-dependent and independent of the matrix's initial permutation.
- * The resulting matrix is reordered in lexicographic order and returned as a new SO6 object.
- *
- * @param i The first index for the T matrix (row index), integral part of specifying the T matrix.
- * @param j The second index for the T matrix (row index), must be greater than `i`.
- * @param p An unsigned char value used to index Tₚ
- * @return SO6 The product of the multiplication, returned as a new SO6 object.
- *
- * @note The function ensures that `j` is always greater than `i`, which is essential for
- *       defining the specific T matrix multiplication. The lexicographic ordering of the
- *       resulting matrix is maintained.
- */
-SO6 SO6::left_multiply_by_T(const int &row1, const int &row2, const unsigned char &p) const
-{
-    SO6 prod = *this;
-
-    for (int col = 0; col < 6; col++)
-    {
-        prod.get_element(row1,col) += arr[(col<<2) + (col<<1) + row2];
-        prod.get_element(row1,col).increaseDE();
-        prod.get_element(row2,col) -= arr[(col<<2) + (col<<1) + row1];
-        prod.get_element(row2,col).increaseDE();
-    }
-    prod.lexicographic_order();
-    prod.update_history(p);
-    return prod;
-}
-
-/// @brief Left multiply this by a T operator
-/// @param i the index of T_i
-/// @return the result T_i * this
 SO6 SO6::left_multiply_by_T(const int &i) const
 {
-    if (i < 5)
-        return left_multiply_by_T(0, i + 1,(unsigned char) i+1);
-    if (i < 9)
-        return left_multiply_by_T(1, i - 3,(unsigned char) i+1);
-    if (i < 12)
-        return left_multiply_by_T(2, i - 6,(unsigned char) i+1);
-    if (i < 14)
-        return left_multiply_by_T(3, i - 8,(unsigned char) i+1);
-    return left_multiply_by_T(4, 5,(unsigned char) i+1);
+    SO6 prod = *this;
+    switch (i) {
+        case 0: return left_multiply_by_T<0>(prod);
+        case 1: return left_multiply_by_T<1>(prod);
+        case 2: return left_multiply_by_T<2>(prod);
+        case 3: return left_multiply_by_T<3>(prod);
+        case 4: return left_multiply_by_T<4>(prod);
+        case 5: return left_multiply_by_T<5>(prod);
+        case 6: return left_multiply_by_T<6>(prod);
+        case 7: return left_multiply_by_T<7>(prod);
+        case 8: return left_multiply_by_T<8>(prod);
+        case 9: return left_multiply_by_T<9>(prod);
+        case 10: return left_multiply_by_T<10>(prod);
+        case 11: return left_multiply_by_T<11>(prod);
+        case 12: return left_multiply_by_T<12>(prod);
+        case 13: return left_multiply_by_T<13>(prod);
+        case 14: return left_multiply_by_T<14>(prod);
+    }
+    // Handle invalid input case
+    throw std::invalid_argument("Invalid value for i");
 }
-
 
 /// @brief left multiply this by a circuit
 /// @param circuit circuit listed as a compressed vector of gates
@@ -394,19 +281,6 @@ SO6 SO6::left_multiply_by_circuit(std::vector<unsigned char> &circuit)
     return prod;
 }
 
-SO6 SO6::left_multiply_by_T_transpose(const int &i)
-{
-    if (i < 5)
-        return left_multiply_by_T(i + 1,0,(unsigned char) i+1);
-    if (i < 9)
-        return left_multiply_by_T(i - 3,1,(unsigned char) i+1);
-    if (i < 12)
-        return left_multiply_by_T(i - 6,2,(unsigned char) i+1);
-    if (i < 14)
-        return left_multiply_by_T(i - 8,3,(unsigned char) i+1);
-    return left_multiply_by_T(5,4,(unsigned char) i+1);
-}
-
 void SO6::update_history(const unsigned char &p) {
     // Check if we need to start a new history entry
     if (hist.empty() || (hist.back() & 0xF0) != 0) {
@@ -418,49 +292,146 @@ void SO6::update_history(const unsigned char &p) {
     }
 }
 
-/// @brief This implements insertion sort
-// void SO6::lexicographic_order()
-// {
-//     int inverse_permutation[6] = {0,1,2,3,4,5};
-//     for(int i = 0; i < 6; i++) {
-//         inverse_permutation[permutation[i]] = i;
-//     }
+void SO6::canonical_form() {
+    row_sort();
+    ecs = get_equivalence_classes();
+    
+    do {
+        for(int curr_sc = 0; curr_sc < 32; curr_sc++) {
+            // unpermuted_print();
+            // Populate the row permutation
+            int k = 0;
+            uint8_t row_perm[6];
+            for (const auto& vec : ecs) {
+                for (int elem : vec) row_perm[k++] = elem;
+            }
 
-//     for (int i = 1; i < 6; i++)
-//     {
-//         int j = i;
-//         while (j > 0 && SO6::lexicographical_less(arr[j], arr[j - 1]))
-//         {
-//             // Swap the actual Z2 arrays in-place
-//             for (int k = 0; k < 6; k++) {
-//                 std::swap(arr[j][k], arr[j - 1][k]);
-//             }
-//             // Swap the corresponding indices in the permutation array
-//             std::swap(inverse_permutation[j], inverse_permutation[j - 1]); 
-//             j--;
-//         }
-//     }
+            // Sort column permutations based on lexicographical order
+            uint8_t col_perm[6] = {0,1,2,3,4,5};
+            uint8_t col_inverse[6];
+            for (int i = 0; i < 6; ++i) {
+                col_inverse[Col[i]] = i;
+            }
 
-//     for(int i = 0; i < 6; i++) {
-//         permutation[inverse_permutation[i]] = i;
-//     }
-// }
+            // std::copy(Col, Col+6, col_perm);
+            std::sort(col_perm, col_perm+6, [this,row_perm,curr_sc,col_inverse](int i, int j) {
+                auto left = get_column(col_inverse[i], row_perm); // This is absolute column i
+                auto right = get_column(col_inverse[j], row_perm); // This is absolute column j
+                std::strong_ordering comparison = utils::lex_order(left, right, curr_sc, curr_sc);
+                return (Less == comparison); // Always returns Less for no good reason
+            });        
 
-// void SO6::lexicographic_order() {
-//     // Sort the indices based on the lexicographical order of the corresponding elements in arr
-//     for(uint8_t i = 0; i < 6; i++) lex_order[i] = i;
-//     std::sort(lex_order, lex_order+6, [this](int i, int j) {
-//         return lexicographical_less((*this)[i], (*this)[j]);
-//     });
-// }
+            if (is_better_permutation(row_perm, col_perm, curr_sc)) {
+                for (int i = 0; i < 6; ++i) {
+                    this->Row[i] = row_perm[i];
+                }
+                for (int i = 0; i < 6; ++i) {
+                    this->Col[i] = col_perm[i];
+                }
+                // std::copy(col_perm, col_perm+6, Col);
+                sign_convention = curr_sc;
+            }
+        } 
+    }  while (SO6::get_next_equivalence_class(ecs));
+}
 
-void SO6::lexicographic_order() {
-    // Sort the indices based on the lexicographical order of the corresponding elements in arr
-    for(uint8_t i = 0; i < 6; i++) lex_order[i] = i;
-    std::sort(lex_order, lex_order+6, [this](int i, int j) {
-        return lexicographical_less(i, j);
+bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm, const int &sign_perm) {
+    SO6::Iterator current_permutation(*this, 0, Row);
+    SO6::Iterator new_permuation(*this, 0, row_perm);
+    for(int col = 0; col < 6; col++) {
+        auto current = get_column(col, Row);
+        auto new_col = get_column(col, row_perm);
+        auto comparison = utils::lex_order(current, new_col, sign_convention, sign_perm);
+
+        if (comparison == Equal) continue;
+        return comparison == Greater;
+    }
+    return false;
+}
+
+/**
+ * @brief Sorts the physical array to match the lexicographical order.
+ * 
+ * This function sorts the physical array `arr` such that it matches the
+ * lexicographical order defined by the `Row` and `Col` arrays.
+ */
+void SO6::sort_physical_array() {
+    Z2 temp[36];
+    std::map<Z2,int> temp_rf[6];
+    for(size_t row = 0; row<6; row++) {
+        for(size_t col = 0; col<6; col++) {
+            temp[(col<<2) + (col<<1) + row] = arr[(Col[col]<<2) + (Col[col] <<1) + Row[row]];
+        }
+        temp_rf[row] = row_frequency[Row[row]];
+    }
+    for(int row =0; row <6 ; row++) {
+        Row[row] = row;
+        Col[row] = row;
+    }
+
+    std::copy(std::begin(temp), std::end(temp), std::begin(arr));
+    std::copy(std::begin(temp_rf), std::end(temp_rf), std::begin(row_frequency));
+}
+
+/**
+ * @brief Sorts the rows based on their frequency counts.
+ * 
+ * This function initializes the Row array with indices from 0 to 5.
+ * It then counts the frequency of each row using a map and sorts the
+ * Row array based on these frequency counts in ascending order.
+ */
+void SO6::row_sort() {    
+    std::sort(Row, Row+6, [this](int a, int b) {
+        return row_frequency[a] < row_frequency[b];
     });
 }
+
+
+std::vector<std::vector<int>> SO6::get_equivalence_classes() const {
+    std::vector<int> ec;
+    std::vector<std::vector<int>> ecs;
+    for (int i = 0; i < 6; i++) {
+        ec.push_back(Row[i]);
+        if (i == 5 || row_frequency[Row[i]] != row_frequency[Row[i+1]]) {
+            ecs.push_back(ec);
+            ec.clear();
+        }
+    }
+    return ecs;
+} 
+
+/**
+ * @brief Negates all elements in a specified row of a 6x6 matrix.
+ * 
+ * This function iterates through each column of the specified (lex) row
+ * and negates the element at that position.
+ * 
+ * @param row Reference to the row index to be negated.
+ */
+void SO6::negate_row(int& row) {
+    // std::cout << "Negating row " << row << std::endl;
+    for (int col = 0; col < 6; ++col) {
+        get_element(row,col).negate();
+    }
+}
+
+// This function doesn't work.
+bool SO6::get_next_equivalence_class(std::vector<std::vector<int>>& row_equivalence_classes) {
+    bool more_permutations = false;
+    for (auto& ec : row_equivalence_classes) {
+        if (std::next_permutation(ec.begin(), ec.end())) {
+            more_permutations = true;
+        } else {
+            std::sort(ec.begin(), ec.end());
+        }
+    }
+    
+    return more_permutations;
+}
+
+// bool SO6::get_next_ec_permutation(std::vector<int>& ec) {
+//     return std::next_permutation(ec.begin(), ec.end());
+// }
 
 std::string SO6::name()
 {
@@ -468,24 +439,16 @@ std::string SO6::name()
 }
 
 SO6 SO6::reconstruct() {
-    SO6 ret = SO6::identity();
-    for(unsigned char i : hist)
-    {
-        ret = ret.left_multiply_by_T((i & 15) -1);
-        if(i>15) ret = ret.left_multiply_by_T((i>>4)-1);
-    }
-    ret.hist = hist;
-    ret.lexicographic_order();
-    return ret;
+    return SO6::reconstruct(std::string(hist.begin(), hist.end()));
 }
 
-SO6 SO6::reconstruct(const std::string name) {
+SO6 SO6::reconstruct(const std::string& name) {
     SO6 ret = SO6::identity();
     for(unsigned char i : name) {
         ret = ret.left_multiply_by_T((i & 15) -1);
         if(i>15) ret = ret.left_multiply_by_T((i>>4)-1);
     }
-    ret.lexicographic_order();
+    ret.canonical_form();
     return ret;
 }
 
@@ -516,27 +479,6 @@ std::string SO6::circuit_string() {
     return ret;
 }
 
-std::vector<unsigned char> invert_circuit_string(const std::string& input) {
-    std::vector<unsigned char> hist;
-    std::istringstream iss(input);
-    int lower, upper;
-
-    while (iss >> lower) {
-        lower += 1;  // Reverse the subtraction of 1 for the lower 4 bits
-        unsigned char byte = static_cast<unsigned char>(lower & 15);
-
-        // Check if there's an upper part
-        if (iss >> upper) {
-            upper += 1;  // Reverse the subtraction of 1 for the upper 4 bits
-            byte |= static_cast<unsigned char>((upper & 15) << 4);
-        }
-
-        hist.push_back(byte);
-    }
-
-    return hist;
-}
-
 SO6 SO6::reconstruct_from_circuit_string(const std::string& input) {
     std::istringstream iss(input);
     int number;
@@ -551,18 +493,19 @@ SO6 SO6::reconstruct_from_circuit_string(const std::string& input) {
     return ret;
 }
 
-
 bool SO6::operator<(const SO6 &other) const
-{
+{   
+    std::cout << "Comparing SO6 objects" << std::endl;
+    unpermuted_print();
+    other.unpermuted_print();
+    std::cin.get();
     for (int col = 0; col < 5; ++col)
     { // There is no need to check the final column due to constraints
-        switch (lexicographical_compare((*this)[lex_order[col]], other[other.lex_order[col]])) {
-            case -1:
-                return true;
-            case 1:
-                return false;
-        }
+        std::cout << "Comparing column " << col << std::endl;
+        std::strong_ordering result = utils::lex_order(get_column(col),other.get_column(col),sign_convention,other.sign_convention);
+        if(result != Equal) return result == Less;
     }
+    // std::cout << "SO6 objects are equal" << std::endl;
     return false;
 }
 
@@ -584,19 +527,19 @@ pattern SO6::to_pattern() const
     pattern ret;
     ret.hist.reserve(hist.size());
     ret.hist = hist;
-
+ 
     const int8_t& lde = getLDE();
     for (int col = 0; col < 6; col++)
     {
         for (int row = 0; row < 6; row++)
         {
-            if (arr[row + (col<<2 + col<<1)].exponent < lde - 1 || arr[row + (col<<2 + col<<1)].intPart==0) {
+            if (arr[row + (col<<2) + (col<<1)].exponent < lde - 1 || arr[row + (col<<2) + (col<<1)].intPart==0) {
                 continue;
             }
-            if (arr[row + (col<<2 + col<<1)].exponent == lde)
+            if (arr[row + (col<<2) + (col<<1)].exponent == lde)
             {
                 ret.arr[col][row].first = 1;
-                ret.arr[col][row].second = arr[row + (col<<2 + col<<1)].sqrt2Part % 2;
+                ret.arr[col][row].second = arr[row + (col<<2) + (col<<1)].sqrt2Part % 2;
                 continue;
             }
             ret.arr[col][row].second = 1;
@@ -604,31 +547,6 @@ pattern SO6::to_pattern() const
     }
     ret.lexicographic_order();
     return ret;
-}
-
-
-/** overloads == method to check equality of SO6 matrices
- *  @param other reference to SO6 to be checked against
- *  @return whether or not (*this) and other are equivalent
- */
-bool SO6::operator==(SO6 &other)
-{
-    for(int col = 0; col < 5; col ++) {
-        if(lexicographical_compare((*this)[col],other[col])) return false;
-    }
-    return true;
-}
-
-bool SO6::operator==(const SO6 &other) const
-{
-    for(int col = 0; col < 5; col ++) {
-        if(lexicographical_compare((*this)[col],other[col])) return false;
-    }
-    return true;
-}
-
-bool SO6::operator!=(const SO6 &other) const {
-    return !(*this==other);
 }
 
 /**
@@ -667,14 +585,120 @@ std::ostream &operator<<(std::ostream &os, const SO6 &m) {
     return os;
 }
 
-void SO6::unpermuted_print() {
+// void SO6::unpermuted_print() const {
+//     int maxWidth = 0;
+
+//     // Find the maximum width of the elements
+//     for (int row : Row) {
+//         for (int col : Col) {
+//             std::stringstream ss;
+//             ss << arr[get_index(row,col)];
+//             maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
+//         }
+//     }
+
+//     const int width = maxWidth + 2; // Adjust the width by adding 2
+
+//     // Print column headers
+//     std::cout << "\n";
+//     std::cout << std::setw(6) << "";  // Adjust spacing for row labels
+//     for (int col = 0; col < 6; ++col) {
+//         std::cout << std::setw(width + 3) << "Col " + std::to_string(Col[col]);
+//     }
+//     std::cout << "\n";
+
+//     // Print the matrix rows and elements
+//     for (int row = 0; row < 6; ++row) {
+//         // Print row label with left border
+//         std::cout << "Row " << std::setw(2) << (int) Row[row] << " ";
+
+//         // Select border style for the row
+//         std::string leftBorder = (row == 0) ? "⌈ " : ((row == 5) ? "⌊ " : "| ");
+//         std::string rightBorder = (row == 0) ? " ⌉" : ((row == 5) ? " ⌋" : " |");
+
+//         std::cout << leftBorder;
+
+//         // Print matrix elements
+//         for (int col = 0; col < 6; ++col) {
+//             std::cout << std::setw(width) << arr[get_index(Row[row], Col[col])] << " ";
+//         }
+
+//         // Print right border
+//         std::cout << rightBorder << "\n";
+//     }
+//     std::cout << "\n";
+// }
+
+void SO6::unpermuted_print(const uint8_t Row_[6], const uint8_t Col_[6]) const {
+    int maxWidth = 0;
+
+    // Determine the maximum width of elements
+    for (int row = 0; row < 6; ++row) {
+        for (int col = 0; col < 6; ++col) {
+            std::stringstream ss;
+            ss << arr[get_index(Row_[row], Col_[col])];
+            maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
+        }
+    }
+
+    for (int col = 0; col < 6; ++col) {
+        std::stringstream ss;
+        maxWidth = std::max(maxWidth, static_cast<int>(std::string("Col [" + std::to_string(col) + "] =" + std::to_string(Col_[col])).length()));
+    }
+
+    const int width = maxWidth + 2;  // Adjust the width by adding some padding
+
+    std::stringstream precomputed_output;
+
+    // Print column headers using Boost.Format
+    precomputed_output << "\n";
+    precomputed_output << boost::format("%-" + std::to_string(width) + "s") % "";  // Adjust spacing for row labels
+    for (int col = 0; col < 6; ++col) {
+        std::stringstream ss; 
+        ss << ("Col[" + std::to_string(col) + "] =" + std::to_string(Col_[col]));   
+        precomputed_output << boost::format("%-" + std::to_string(width) + "s") % ss.str();
+    }
+    precomputed_output << "\n";
+
+    // Print matrix rows and elements
+    for (int row = 0; row < 6; ++row) {
+        // Print row label with left border
+        precomputed_output << boost::format("Row %-2d ") % (int) Row_[row];
+
+        // Select border style for the row
+        std::string leftBorder = (row == 0) ? "⌈ " : ((row == 5) ? "⌊ " : "| ");
+        std::string rightBorder = (row == 0) ? " ⌉" : ((row == 5) ? " ⌋" : " |");
+
+        precomputed_output << leftBorder;
+
+        // Precompute each element in the row and format it using Boost.Format
+        for (int col = 0; col < 6; ++col) {
+            std::stringstream ss;
+            ss << get_element(Row_[row], Col_[col]);
+            precomputed_output << boost::format("%-" + std::to_string(width) + "s") % ss.str();
+        }
+
+        // Print right border
+        precomputed_output << rightBorder << "\n";
+    }
+    precomputed_output << "\n";
+
+    // Output everything at once after precomputing
+    std::cout << precomputed_output.str();
+}
+
+void SO6::unpermuted_print() const {
+    unpermuted_print(this->Row, this->Col);
+}
+
+void SO6::physical_print() const {
     int maxWidth = 0;
 
     // Find the maximum width of the elements
-    for (int row = 0; row < 6; row++) {
-        for (int col = 0; col < 6; col++) {
+    for (int row = 0; row < 6 ; row++) {
+        for (int col =0 ; col <6 ; col++) {
             std::stringstream ss;
-            ss << this[col][row];
+            ss << arr[get_index(row,col)];
             maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
         }
     }
@@ -682,15 +706,50 @@ void SO6::unpermuted_print() {
     const int width = maxWidth + 2; // Adjust the width by adding 2
 
     std::cout << "\n";
-    for (int row = 0; row < 6; row++) {
-        std::string leftBorder = (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
+    for (int row= 0 ; row <6 ; row++) {
+        std::string leftBorder = "Row: " + std::to_string(row) + " ";
+        leftBorder += (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
         std::string rightBorder = (row == 0) ? "⌉" : ((row == 5) ? "⌋" : "|");
 
         std::cout << leftBorder << "\t";
-        for (int col = 0; col < 6; col++) {
-            std::cout << std::setw(width) << this[col][row];
+        for (int col = 0; col < 6 ; col++) {
+            std::cout << std::setw(width) << arr[get_index(row,col)];
         }
         std::cout << "\t" << rightBorder << "\n";
     }
     std::cout << "\n";
 }
+
+
+void SO6::unpermuted_print(const std::bitset<6>& columns_to_print) const {
+    int maxWidth = 0;
+
+    // Find the maximum width of the elements in the specified columns
+    for (int row : Row) {
+        for (int col : Col) {
+            if (columns_to_print.test(col)) {
+                std::stringstream ss;
+                ss << arr[get_index(row, col)];
+                maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
+            }
+        }
+    }
+
+    const int width = maxWidth + 2; // Adjust the width by adding 2
+
+    std::cout << "\n";
+    for (int row : Row) {
+        std::string leftBorder = (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
+        std::string rightBorder = (row == 0) ? "⌉" : ((row == 5) ? "⌋" : "|");
+
+        std::cout << leftBorder << "\t";
+        for (int col = 0; col < 6; ++col) {
+            if (columns_to_print.test(col)) {
+                std::cout << std::setw(width) << arr[get_index(row, col)];
+            }
+        }
+        std::cout << "\t" << rightBorder << "\n";
+    }
+    std::cout << "\n";
+}
+

@@ -447,24 +447,24 @@ int main(int argc, char **argv)
 
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
     {
-        // if(curr_T_count == 3) {
-        //     for(const SO6 &S : current) {
-        //         SO6 tmp = S;
-        //         // std::cout << S << std::endl;
-        //         S.unpermuted_print();
-        //         std::cout << "Equivalence classes: " << std::endl;
-        //         for (const auto& ec : S.ecs) {
-        //             std::cout << "(";
-        //             for (int elem : ec) {
-        //                 std::cout << elem;
-        //             }
-        //             std::cout << ")";
-        //         }
-        //         std::cout << std::endl;
-        //         std::cout << tmp.circuit_string() << std::endl;
-        //     }
-        //     std::exit(0);
-        // }
+        if(curr_T_count == 4) {
+            for(const SO6 &S : current) {
+                SO6 tmp = S;
+                // std::cout << S << std::endl;
+                S.unpermuted_print();
+                std::cout << "Equivalence classes: ";
+                for (const auto& ec : S.ecs) {
+                    std::cout << "(";
+                    for (int elem : ec) {
+                        std::cout << (int) elem;
+                    }
+                    std::cout << ")";
+                }
+                std::cout << std::endl;
+                std::cout << tmp.circuit_string() << std::endl;
+            }
+            std::exit(0);
+        }
 
         set<SO6> next;
         std::ofstream of = prepare_T_count_io(curr_T_count+1,stored_depth_max,target_T_count);
