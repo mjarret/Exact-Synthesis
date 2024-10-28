@@ -1,0 +1,1 @@
+g++ test_so6.cpp SO6.cpp Z2.cpp pattern.cpp Globals.cpp -std=c++20 -o test.out -lboost_program_options -g

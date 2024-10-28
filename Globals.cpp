@@ -17,7 +17,7 @@ std::vector<pattern> cases;
 std::string pattern_file = "";
 std::string case_file = "";
 std::string root_string ="";
-SO6 root;
+SO6 root = SO6::identity();
 
 // Configuration and state variables
 uint8_t target_T_count = 8;            
@@ -102,10 +102,12 @@ void Globals::configure()
         cases_flag=true;
     } 
 
-    root = SO6::reconstruct_from_circuit_string(root_string);
     if (root_string.empty()) {
+        // root = SO6::identity();
         std::cout << "[Config] No root specified. Using identity.\n";
     } else {
+        // REIMPLEMENT ME
+        // root = SO6::reconstruct_from_circuit_string(root_string);
         std::cout << "[Config] Root specified: " << root_string << "\n";
     }
 

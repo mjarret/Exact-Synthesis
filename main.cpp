@@ -31,8 +31,8 @@ using namespace std;
  */
 static std::set<pattern> permutation_set(pattern &pat)
 {   
-    std::set<pattern> perms;
     // Insert the original pattern into the set
+    std::set<pattern> perms;
     std::set<pattern> inits;
     inits.insert(pat);
     inits.insert(pat.transpose());
@@ -102,7 +102,6 @@ static void read_pattern_file(std::string pattern_file_path)
     if(pattern_file_path.empty()) return;
 
     std::cout << "[Read] Reading patterns from " << pattern_file << std::endl;
-    
     std::ifstream patternFile(pattern_file_path); // More descriptive variable name
 
     if (!patternFile.is_open())
@@ -111,9 +110,7 @@ static void read_pattern_file(std::string pattern_file_path)
         return;
     }
 
-    bool isCSV = pattern_file_path.substr(pattern_file_path.find_last_of(".") + 1) == "csv";
-
-    
+    bool isCSV = pattern_file_path.substr(pattern_file_path.find_last_of(".") + 1) == "csv";    
 
      // Renamed for clarity
     std::string line;
@@ -121,12 +118,14 @@ static void read_pattern_file(std::string pattern_file_path)
     {
         std::string binaryString = isCSV ? utils::convert_csv_line_to_binary(line) : line;
         pattern currentPattern(binaryString); // More descriptive name
+        currentPattern.id = line;
         currentPattern.lexicographic_order();
         // std::cout << currentPattern;
         insert_all_permutations(currentPattern);
     }
 
     patternFile.close(); // Close file after processing
+
     // Handle special case of the identity pattern
     pattern identityPattern = pattern::identity();
     pattern_set.erase(identityPattern);
@@ -370,7 +369,7 @@ set<SO6> SO6s_starting_at(SO6 &tree_root, const int &depth) {
             for(const SO6& S : current)
             {
                 SO6 toInsert = S.left_multiply_by_T(T);
-                next.insert(toInsert);                              
+                next.insert(toInsert);  
             }
         }
         utils::setDifference(next,prior);
@@ -378,6 +377,47 @@ set<SO6> SO6s_starting_at(SO6 &tree_root, const int &depth) {
     }
 
     return current;
+}
+
+set<pattern> patterns_starting_at(SO6 &tree_root, const int &depth) {
+
+    set<SO6> prior, current = std::set<SO6>({tree_root});
+    set<pattern> found_patterns = std::set<pattern>({tree_root.to_pattern()});
+    bool flag = false;
+    for (int curr_T_count = 0; curr_T_count < depth; ++curr_T_count)
+    {
+        if(curr_T_count == depth-1) std::cout << "Depth: " << curr_T_count << " Current size: " << current.size() << std::endl;
+        set<SO6> next;
+        for (int T = 0; T < 15; T++)
+        {                
+            for(const SO6& S : current)
+            {
+                SO6 toInsert = S.left_multiply_by_T(T);
+                pattern p = toInsert.to_pattern();
+                p.lexicographic_order();
+                found_patterns.insert(p);
+                if(pattern_set.find(p) == pattern_set.end()) {
+                    std::cout << "Pattern not found: " << p << std::endl;
+                    std::cout << S << std::endl;
+                    std::cout << toInsert << std::endl;
+                    std::cin.get();
+                    flag = true;
+                    break;
+                }
+                next.insert(toInsert);  
+            }
+        }
+        utils::setDifference(next,prior);
+        utils::rotate_and_clear(prior, current, next); // current is now ready for next iteration
+        if(flag) {
+            for(pattern p : found_patterns) {
+                erase_all_permutations(p);
+            }
+            break;
+        }
+    }
+
+    return found_patterns;
 }
 
 /**
@@ -395,7 +435,7 @@ int main(int argc, char **argv)
     auto program_init_time = now();          // Begin timekeeping
     Globals::setParameters(argc, argv);      // Initialize parameters to command line argument
     Globals::configure();                    // Configure the globals to remove inconsistencies
-    read_pattern_file(pattern_file);
+    read_pattern_file(pattern_file);        // Read the pattern file
 
     set<SO6> prior, current = std::set<SO6>({root});
 
@@ -404,24 +444,75 @@ int main(int argc, char **argv)
 
     std::vector<SO6> generating_set[ngs];    
 
+
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
     {
+        // if(curr_T_count == 3) {
+        //     for(const SO6 &S : current) {
+        //         SO6 tmp = S;
+        //         // std::cout << S << std::endl;
+        //         S.unpermuted_print();
+        //         std::cout << "Equivalence classes: " << std::endl;
+        //         for (const auto& ec : S.ecs) {
+        //             std::cout << "(";
+        //             for (int elem : ec) {
+        //                 std::cout << elem;
+        //             }
+        //             std::cout << ")";
+        //         }
+        //         std::cout << std::endl;
+        //         std::cout << tmp.circuit_string() << std::endl;
+        //     }
+        //     std::exit(0);
+        // }
+
         set<SO6> next;
         std::ofstream of = prepare_T_count_io(curr_T_count+1,stored_depth_max,target_T_count);
 
-        uint64_t count = 0, interval_size = 15*current.size();
+        uint64_t count = 0, interval_size = (15*current.size()) / THREADS;
+        
+        // Calculate the staggered insertion offset
+        size_t insert_interval = current.size() / 1000;
+        
+        // Create a vector of thread-safe sets for parallel insertion
+        std::vector<std::set<SO6>> thread_safe_sets(THREADS);
 
-        for (int T = 0; T < 15; T++)
-        {                
-            for(const SO6& S : current)
+        int insert_counter = 0;
+        #pragma omp parallel num_threads(THREADS)
+        {
+            int thread_id = omp_get_thread_num();
+            size_t operation_count = thread_id;  // Thread-local operation count offset by thread
+            #pragma omp for collapse(2) schedule(dynamic)
+            for (size_t i = 0; i < current.size(); ++i)
             {
-                SO6 toInsert = S.left_multiply_by_T(T);
-                if (next.insert(toInsert).second)                              // Want to insert toInsert no matter what, if we haven't seen this
-                { 
-                    if(T==0) erase_and_record_pattern(toInsert, of);           // Only erase the pattern if the last T operation was done by 0, since we'll do things up to permutation?
+                #pragma unroll
+                for (int T = 0; T < 15; T++)
+                {                
+                    if (thread_id == 0) {
+                        report_percent_complete(++count, interval_size);
+                    }
+                    auto it = std::next(current.begin(), i);
+                    const SO6& S = *it;
+                    SO6 toInsert = S.left_multiply_by_T(T);
+                    thread_safe_sets[thread_id].insert(toInsert); 
+                    operation_count++;
+
+                    // This should honestly become a bit unlikely to collide over time
+                    if ((operation_count) % 3 == 0) {
+                        #pragma omp critical
+                        {
+                            next.insert(thread_safe_sets[thread_id].begin(), thread_safe_sets[thread_id].end());
+                            thread_safe_sets[thread_id].clear();  // Clear after inserting into `next`
+                            std::set<SO6>().swap(thread_safe_sets[thread_id]);  // Swap and release memory
+                        }
+                    }
                 }
-                report_percent_complete(++count, interval_size);
             }
+        }
+        // Combine all thread-safe sets into the next set
+        for (const auto& thread_set : thread_safe_sets)
+        {   
+            next.insert(thread_set.begin(), thread_set.end());
         }
 
         utils::setDifference(next,prior);

@@ -16,19 +16,41 @@ pattern::pattern(const bool binary_rep[72]) {
             arr[col][row].second = binary_rep[2 * col + 12 * row + 1]; 
         }
     }
+    lexicographic_order();
 }
 
 pattern::pattern(const std::string &binary_string) {
     bool binary_rep[72] = {0}; // Array representing binary pattern
     int index = 0; // Index for binaryArray
     float iter = 72/binary_string.length();
-    if(iter != 2 && iter != 1) std::exit(EXIT_FAILURE);
+    if(iter != 2 && iter != 1) {
+        std::string copyOfBS = binary_string;
+        copyOfBS = generateBinaryString(binary_string);
+        if (copyOfBS.length() != 72 && copyOfBS.length()!= 36) {
+            std::cout << "Cannot parse pattern. Exiting.";
+            std::exit(0);
+        }
+        *this = pattern(copyOfBS);
+        lexicographic_order();
+        return;
+    }
     for (char digit : binary_string)
     {
         binary_rep[index] = (digit == '1'); // Convert char to boolean
         index+=iter;
     }
     *this = pattern(binary_rep);
+    lexicographic_order();
+}
+
+std::string pattern::generateBinaryString(const std::string& text) {
+    std::string binaryString;
+    for (char c : text) {
+        if (c == '0' || c == '1') {
+            binaryString += c;
+        }
+    }
+    return binaryString;
 }
 
 const bool* pattern::to_binary() const{
@@ -95,7 +117,7 @@ bool pattern::operator<(const pattern &other) const {
     return false;
 }
 
-int8_t pattern::lexicographical_compare(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
+int8_t pattern::lex_order(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
     for (int row = 0; row < 6; row++)
     {
@@ -123,9 +145,9 @@ int8_t pattern::case_compare(const std::pair<bool,bool> first[6],const std::pair
     return 0;
 }
 
-bool pattern::lexicographical_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
+bool pattern::lex_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
-    return (pattern::lexicographical_compare(first,second)<0);
+    return (pattern::lex_order(first,second)<0);
 }
 
 bool pattern::case_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
@@ -136,9 +158,10 @@ bool pattern::case_less(const std::pair<bool,bool> first[6],const std::pair<bool
 void pattern::lexicographic_order() {
     for (int i = 1; i < 6; i++)
     {
-        for (int j = i; j > 0 && pattern::lexicographical_less(arr[j],arr[j-1]); j--)  std::swap(arr[j], arr[j - 1]);
+        for (int j = i; j > 0 && pattern::lex_less(arr[j],arr[j-1]); j--)  std::swap(arr[j], arr[j - 1]);
     }
 }
+
 
 void pattern::case_order() {
     for (int i = 1; i < 6; i++)
@@ -265,7 +288,7 @@ std::string pattern::name()
 // If needed, we can make this routine a bit faster by eliminating lexicographic ordering
 // since we can just count 1s to distinguish most of these
 const int pattern::case_number() {
-    this->case_order();
+    this->lexicographic_order();
     // Case 1,2,5,7 all have at most 2 entries per row
     // Thus, after lexicographic ordering of the columns
     // these two entries will always be in columns 0 or 1

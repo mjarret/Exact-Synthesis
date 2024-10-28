@@ -32,11 +32,12 @@ class pattern{
         std::vector<unsigned char> hist;
         std::string name(); 
         std::string human_readable();
+        std::string generateBinaryString(const std::string&);
 
-        static int8_t lexicographical_compare(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
+        static int8_t lex_order(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
         static int8_t case_compare(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
 
-        static bool lexicographical_less(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
+        static bool lex_less(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
         static bool case_less(const std::pair<bool,bool>[6],const std::pair<bool,bool>[6]);
         bool case_equals(const pattern &) const;
 
@@ -51,7 +52,7 @@ class pattern{
             }
             return I;
         }
-
+        std::string id;
     private:
 };
 

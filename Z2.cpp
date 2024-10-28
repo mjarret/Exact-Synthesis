@@ -129,6 +129,144 @@ Z2& Z2::operator+=(const Z2 &other) {
     return *this;
 }
 
+Z2& Z2::abs_add(const Z2 &other) {
+    if(other.intPart==0) {
+        return *this;
+    }
+    if(intPart==0) {
+        if(other.intPart < 0) {
+            intPart = -other.intPart;
+            sqrt2Part = -other.sqrt2Part;
+        } else {
+            *this = other;
+        }
+        return *this;
+    }
+
+    // It is now the case that they are both non-zero
+    uz2_int exp_diff = std::abs(exponent - other.exponent);       
+    if(other.intPart < 0) {
+        if(other.exponent < exponent) {
+            if(exp_diff & 1) {
+                intPart -= other.sqrt2Part << ((exp_diff + 1) >> 1);
+                sqrt2Part -= other.intPart << (exp_diff >> 1);
+            } else {
+                intPart -= other.intPart << (exp_diff >> 1);
+                sqrt2Part -= other.sqrt2Part << (exp_diff >> 1);
+                // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+            }
+        } else {
+            if(exp_diff & 1) {
+                std::swap(intPart, sqrt2Part);
+                intPart <<= 1; // multiply intPart by 2
+                exp_diff--; // already multiplied by 2, exp_diff is now even
+            }
+            intPart <<= (exp_diff >> 1);
+            sqrt2Part <<= (exp_diff >> 1);
+            exponent = other.exponent;
+            intPart -= other.intPart;
+            sqrt2Part -= other.sqrt2Part;
+            exponent = other.exponent;
+            // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+        }
+    }
+    if(other.exponent < exponent) {
+        if(exp_diff & 1) {
+            intPart += other.sqrt2Part << ((exp_diff + 1) >> 1);
+            sqrt2Part += other.intPart << (exp_diff >> 1);
+        } else {
+            intPart += other.intPart << (exp_diff >> 1);
+            sqrt2Part += other.sqrt2Part << (exp_diff >> 1);
+            // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+        }
+    } else {
+        if(exp_diff & 1) {
+            std::swap(intPart, sqrt2Part);
+            intPart <<= 1; // multiply intPart by 2
+            exp_diff--; // already multiplied by 2, exp_diff is now even
+        }
+        intPart <<= (exp_diff >> 1);
+        sqrt2Part <<= (exp_diff >> 1);
+        exponent = other.exponent;
+        intPart += other.intPart;
+        sqrt2Part += other.sqrt2Part;
+        exponent = other.exponent;
+    }
+   
+    return *this;
+}
+
+Z2& Z2::abs_subtract(const Z2 &other) {
+    if(other.intPart==0) {
+        return *this;
+    }
+    if(intPart==0) {
+        if(other.intPart < 0) {
+            *this = other;
+            return *this;
+        } else {
+            intPart = -other.intPart;
+            sqrt2Part = -other.sqrt2Part;
+            exponent = other.exponent;
+        }
+        return *this;
+    }
+
+    // It is now the case that they are both non-zero
+    uz2_int exp_diff = std::abs(exponent - other.exponent);       
+    if(other.intPart < 0) {
+        if(other.exponent < exponent) {
+            if(exp_diff & 1) {
+                intPart += other.sqrt2Part << ((exp_diff + 1) >> 1);
+                sqrt2Part += other.intPart << (exp_diff >> 1);
+            } else {
+                intPart += other.intPart << (exp_diff >> 1);
+                sqrt2Part += other.sqrt2Part << (exp_diff >> 1);
+                // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+            }
+        } else {
+            if(exp_diff & 1) {
+                std::swap(intPart, sqrt2Part);
+                intPart <<= 1; // multiply intPart by 2
+                exp_diff--; // already multiplied by 2, exp_diff is now even
+            }
+            intPart <<= (exp_diff >> 1);
+            sqrt2Part <<= (exp_diff >> 1);
+            exponent = other.exponent;
+            intPart += other.intPart;
+            sqrt2Part += other.sqrt2Part;
+            exponent = other.exponent;
+            // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+        }
+    }
+    if(other.exponent < exponent) {
+        if(exp_diff & 1) {
+            intPart -= other.sqrt2Part << ((exp_diff + 1) >> 1);
+            sqrt2Part -= other.intPart << (exp_diff >> 1);
+        } else {
+            intPart -= other.intPart << (exp_diff >> 1);
+            sqrt2Part -= other.sqrt2Part << (exp_diff >> 1);
+            // if(!exp_diff) reduce(); Guaranteed to be odd, do not need to reduce
+        }
+    } else {
+        if(exp_diff & 1) {
+            std::swap(intPart, sqrt2Part);
+            intPart <<= 1; // multiply intPart by 2
+            exp_diff--; // already multiplied by 2, exp_diff is now even
+        }
+        intPart <<= (exp_diff >> 1);
+        sqrt2Part <<= (exp_diff >> 1);
+        exponent = other.exponent;
+        intPart -= other.intPart;
+        sqrt2Part -= other.sqrt2Part;
+        exponent = other.exponent;
+    }
+   
+    return *this;
+}
+
+
+
 /**
  * Overloads the -= operator for Z2 objects.
  * Subtracts the 'other' Z2 object from the current object.
@@ -147,6 +285,7 @@ Z2 &Z2::operator-=(const Z2 &other){
 Z2 Z2::operator-() const { 
     return Z2(-intPart, -sqrt2Part, exponent); 
 }
+
 
 /**
  * Overloads the - operator for Z2 objects.
@@ -170,7 +309,6 @@ Z2 Z2::operator-(Z2 &other) { return -other + *this; }
 //     // return tmp;
 // }
 
-
 /**
  * Overloads the * operator for Z2 objects.
  * Multiplies the current object with 'other'.
@@ -180,6 +318,70 @@ Z2 Z2::operator-(Z2 &other) { return -other + *this; }
 Z2 Z2::operator*(const Z2 &other) const
 {   
     return Z2(intPart * other.intPart + ((sqrt2Part * other.sqrt2Part) << 1), intPart * other.sqrt2Part + sqrt2Part * other.intPart, exponent + other.exponent);
+}
+
+/**
+ * Overloads the * operator for Z2 objects.
+ * Multiplies the current object with 'other'.
+ * @param other The Z2 object to be multiplied with the current object.
+ * @return The result of the multiplication.
+ */
+void Z2::zero_mask_multiply(const Z2 &other) 
+{
+    // Maybe slightly faster to bit twiddle.
+    if(other.intPart == 0) {
+        intPart *=3;
+        return;
+    }
+    intPart = intPart * other.intPart + ((sqrt2Part * other.sqrt2Part) << 1);
+    sqrt2Part = intPart * other.sqrt2Part + sqrt2Part * other.intPart;
+    exponent =  other.exponent;
+}
+
+/**
+ * Overloads the / operator for Z2 objects.
+ * Divides the current object by 'other'.
+ * @param other The Z2 object to divide the current object by.
+ * @return The result of the division.
+ */
+Z2 Z2::operator/(const Z2 &other) const
+{   
+    // If this is 0, we can't do division.     
+    // If other is 0, then by virtue of other generating this, this is also 0, so don't need to check
+    if(intPart == 0) return Z2(0,0,0);   
+ 
+    // Neither is 0 now, so we can do division. Assume that other was one of the terms in the 
+    // original product and we did not reduce it. This will fail if we reduced it and we would need
+    // add further checks.
+    int denominator = (other.intPart * other.intPart << 1) - (other.sqrt2Part * other.sqrt2Part);
+
+    int intPartNew = (intPart << 1) * other.intPart + sqrt2Part * other.sqrt2Part;
+    int sqrt2PartNew = (sqrt2Part << 1) * other.intPart - intPart * other.sqrt2Part;
+
+    intPartNew /= denominator;
+    sqrt2PartNew /= denominator;
+    return Z2(intPartNew, sqrt2PartNew, exponent - other.exponent);
+}
+
+/**
+ * Overloads the * operator for Z2 objects.
+ * Multiplies the current object with 'other'.
+ * @param other The Z2 object to be multiplied with the current object.
+ * @return The result of the multiplication.
+ */
+void Z2::zero_mask_divide(const Z2 &other) 
+{
+    // If trying to divide by 0, actually divide by the mask 3. No other work needed.
+    if(other.intPart == 0) {
+        intPart /= 3;
+        return;
+    } 
+    int denominator = (other.intPart * other.intPart << 1) - (other.sqrt2Part * other.sqrt2Part);
+    int intPartNew = (intPart << 1) * other.intPart + sqrt2Part * other.sqrt2Part;
+    int sqrt2PartNew = (sqrt2Part << 1) * other.intPart - intPart * other.sqrt2Part;
+    intPart = intPartNew / denominator;
+    sqrt2Part = sqrt2PartNew / denominator;
+    exponent -= other.exponent;
 }
 
 /**
@@ -243,6 +445,15 @@ bool Z2::operator<(const Z2 &other) const
     {
         if(sqrt2Part<other.sqrt2Part) return true;
         if(sqrt2Part==other.sqrt2Part && exponent<other.exponent) return true;
+    }
+    return false;
+}
+
+bool Z2::abs_less(const Z2 &other) {
+    if(intPart < other.intPart) return true;
+    if(intPart == other.intPart) {
+        if(sqrt2Part < other.sqrt2Part) return true;
+        if(sqrt2Part == other.sqrt2Part && exponent < other.exponent) return true;
     }
     return false;
 }
@@ -386,4 +597,23 @@ Z2 &Z2::reduce()
 std::ostream& operator<<(std::ostream& os, const Z2& z){
     os << (int) z.intPart << "," << (int) z.sqrt2Part << "e" << (int) z.exponent;
     return os;
+}
+
+
+/**
+ * @brief Computes the absolute value of the Z2 object.
+ * 
+ * This method returns a new Z2 object that represents the absolute value
+ * of the current object. If the integer part of the current object is 
+ * negative, it returns the negation of the current object; otherwise, 
+ * it returns the current object itself.
+ * 
+ * @return Z2 A new Z2 object representing the absolute value.
+ */
+Z2 Z2::abs() {
+    return (intPart < 0) ? -*this : *this;
+}
+
+Z2 Z2::abs() const{
+    return (intPart < 0) ? -*this : *this;
 }
