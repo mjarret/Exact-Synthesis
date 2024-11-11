@@ -133,30 +133,6 @@ static void read_pattern_file(std::string pattern_file_path)
     std::cout << "[Finished] Loaded " << pattern_set.size() << " non-identity patterns." << std::endl;
 }
 
-static bool is_valid_pattern(pattern pat) {
-    SO6 S, St;
-    for(int col = 0; col < 6; col++) {
-        for(int row = 0; row < 6; row++) {
-            S[col][row].intPart=pat.arr[col][row].first;
-            S[col][row].sqrt2Part=pat.arr[col][row].second;
-        }
-    }
-    for(int col = 0; col < 6; col++) {
-        for(int row = 0; row < 6; row++) {
-            St[col][row].intPart=pat.arr[row][col].first;
-            St[col][row].sqrt2Part=pat.arr[row][col].second;
-        }
-    }
-
-    S = St*S;
-    for(int col = 0; col < 6; col++) {
-        for(int row = 0; row < 6; row++) {
-            if(!(St[col][row] == 0)) return false;
-        }
-    }
-    return true;
-}
-
 /// @brief Reads binary patterns from a file and processes them.
 ///        Each line in the file is expected to be a binary string representing a pattern.
 ///        This function converts each line into a pattern object, orders it lexicographically,
@@ -289,12 +265,17 @@ inline static void report_percent_complete(const uint64_t &c, const uint64_t s)
 /**
  * @brief Function to report completion
  * @param matrices_found how many matrices were found
+ * @param b flag indicating whether to print the number of matrices found
+ * @param of output file stream to close
  */
 static void finish_io(const uint &matrices_found, const bool b, std::ofstream &of) {
-    std::cout << "\033[A\033[A\r ||\t↪ [Progress] Processing .....    100\%" << std::endl; 
+    std::cout << "\033[A\033[A\r ||\t↪ [Progress] Processing .....    100%" << std::endl; 
     std::cout << " ||\t↪ [Patterns] " << pattern_set.size() << " patterns remain." << std::endl;
-    if(b) std::cout << " ||\t↪ [Finished] Found " << matrices_found << " new matrices in " << time_since(tcount_init_time) << "\n ||" << std::endl;
-    else std::cout << " ||\t↪ [Finished] Completed in " << time_since(tcount_init_time) << "\n ||" << std::endl;
+    if (b) {
+        std::cout << " ||\t↪ [Finished] Found " << matrices_found << " new matrices in " << time_since(tcount_init_time) << "\n ||" << std::endl;
+    } else {
+        std::cout << " ||\t↪ [Finished] Completed in " << time_since(tcount_init_time) << "\n ||" << std::endl;
+    }
     of.close();
 }
 
@@ -302,28 +283,21 @@ static std::ofstream prepare_T_count_io(const int t, uint8_t &stored_depth_max, 
     int free_multiply_depth = utils::free_multiply_depth(target_T_count,stored_depth_max);
     // Begin reporting for T=1 with specific depth information
     if (t == 1) {
-        std::cout << "\n\n[Begin] Generating T=1 through T=" << static_cast<int>(stored_depth_max);
-        std::cout << " iteratively, but will only save ";
-
-        if (free_multiply_depth >= 2) {
-            std::cout << (free_multiply_depth == 2 ? "T=2" : "2≤T≤" + std::to_string(free_multiply_depth));
-            std::cout << " and ";
-        }
-        std::cout << "T=" << static_cast<int>(stored_depth_max) << " in memory\n ||\n";
+        std::cout << "\n\n[Begin] Generating T=1 through T=" << static_cast<int>(stored_depth_max) << " iteratively, but will only save "
+                  << (free_multiply_depth >= 2 ? (free_multiply_depth == 2 ? "T=2" : "2≤T≤" + std::to_string(free_multiply_depth)) + " and " : "")
+                  << "T=" << static_cast<int>(stored_depth_max) << " in memory\n ||\n";
     }
 
     report_begin_T_count(t);
     std::string file_string = "./data/" + to_string(t) + ".dat";
     std::ofstream of;
     of.open(file_string, ios::out | ios::trunc);
-    if(!of.is_open()) std::exit(0);
-    std::cout << " ||\t↪ [Save] Opening file " << file_string << "\n";
-    if(t == stored_depth_max+1) 
-        std::cout << " ||\t↪ [Rep] Left multiplying everything by T₀\n";
-    if(t > stored_depth_max+1) 
-        std::cout << " ||\t↪ [Rep] Using generating_set[" << t-stored_depth_max-1 << "]\n";
-    std::cout << " ||\t↪ [Progress] Processing .....    0\%\n"
-                << " ||\t↪ [Patterns] " << pattern_set.size() << " patterns remain." << std::endl;
+    if (!of.is_open()) std::exit(0);
+    std::cout << " ||\t↪ [Save] Opening file " << file_string << "\n"
+              << (t == stored_depth_max + 1 ? " ||\t↪ [Rep] Left multiplying everything by T₀\n" : 
+                  (t > stored_depth_max + 1 ? " ||\t↪ [Rep] Using generating_set[" + std::to_string(t - stored_depth_max - 1) + "]\n" : ""))
+              << " ||\t↪ [Progress] Processing .....    0%\n"
+              << " ||\t↪ [Patterns] " << pattern_set.size() << " patterns remain." << std::endl;
     return of;
 }
 
@@ -444,35 +418,13 @@ int main(int argc, char **argv)
 
     std::vector<SO6> generating_set[ngs];    
 
-
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
     {
-        if(curr_T_count == 4) {
-            for(const SO6 &S : current) {
-                SO6 tmp = S;
-                // std::cout << S << std::endl;
-                S.unpermuted_print();
-                std::cout << "Equivalence classes: ";
-                for (const auto& ec : S.ecs) {
-                    std::cout << "(";
-                    for (int elem : ec) {
-                        std::cout << (int) elem;
-                    }
-                    std::cout << ")";
-                }
-                std::cout << std::endl;
-                std::cout << tmp.circuit_string() << std::endl;
-            }
-            std::exit(0);
-        }
 
         set<SO6> next;
         std::ofstream of = prepare_T_count_io(curr_T_count+1,stored_depth_max,target_T_count);
 
         uint64_t count = 0, interval_size = (15*current.size()) / THREADS;
-        
-        // Calculate the staggered insertion offset
-        size_t insert_interval = current.size() / 1000;
         
         // Create a vector of thread-safe sets for parallel insertion
         std::vector<std::set<SO6>> thread_safe_sets(THREADS);
@@ -482,29 +434,26 @@ int main(int argc, char **argv)
         {
             int thread_id = omp_get_thread_num();
             size_t operation_count = thread_id;  // Thread-local operation count offset by thread
-            #pragma omp for collapse(2) schedule(dynamic)
-            for (size_t i = 0; i < current.size(); ++i)
-            {
-                #pragma unroll
-                for (int T = 0; T < 15; T++)
-                {                
-                    if (thread_id == 0) {
-                        report_percent_complete(++count, interval_size);
-                    }
-                    auto it = std::next(current.begin(), i);
-                    const SO6& S = *it;
-                    SO6 toInsert = S.left_multiply_by_T(T);
-                    thread_safe_sets[thread_id].insert(toInsert); 
-                    operation_count++;
+            
+            #pragma omp for collapse(2) schedule(dynamic) nowait
+            for (size_t i = 0; i < current.size(); ++i) for (int T = 0; T < 15; T++)
+            {                
+                if (thread_id == 0)  report_percent_complete(++count, interval_size);
 
-                    // This should honestly become a bit unlikely to collide over time
-                    if ((operation_count) % 3 == 0) {
-                        #pragma omp critical
-                        {
-                            next.insert(thread_safe_sets[thread_id].begin(), thread_safe_sets[thread_id].end());
-                            thread_safe_sets[thread_id].clear();  // Clear after inserting into `next`
-                            std::set<SO6>().swap(thread_safe_sets[thread_id]);  // Swap and release memory
-                        }
+                auto it = std::next(current.begin(), i);
+                const SO6& S = *it;
+                SO6 toInsert = S.left_multiply_by_T(T);
+                if(next.find(toInsert) != next.end()) continue; // skip ahead if someone already inserted this one find should be stable
+                thread_safe_sets[thread_id].insert(toInsert); 
+                operation_count++;
+
+                // This should honestly become a bit unlikely to collide over time
+                if (thread_safe_sets[thread_id].size() > 10) {
+                    #pragma omp critical
+                    {
+                        next.insert(thread_safe_sets[thread_id].begin(), thread_safe_sets[thread_id].end());
+                        thread_safe_sets[thread_id].clear();  // Clear after inserting into `next`
+                        std::set<SO6>().swap(thread_safe_sets[thread_id]);  // Swap and release memory
                     }
                 }
             }
@@ -533,15 +482,12 @@ int main(int argc, char **argv)
     uint64_t set_size = to_compute.size();
     uint64_t interval_size = std::ceil(set_size / THREADS); // Equally divide among threads, not sure how to balance but each should take about the same time
 
+
     for (int curr_T_count = stored_depth_max; curr_T_count < target_T_count; ++curr_T_count)
     {    
         std::ofstream of = prepare_T_count_io(curr_T_count+1,stored_depth_max, target_T_count);
 
         std::vector<std::ofstream> file_stream(THREADS);
-        // for(int i=0; i < THREADS; i++) {
-        //     std::string file_name = "./data/reductions/thread" + std::to_string(i) + ".dat";
-        //     file_stream[i].open(file_name, std::ios::out | std::ios::trunc);
-        // }
 
         omp_init_lock(&lock);
         #pragma omp parallel for schedule(static, interval_size) num_threads(THREADS)
@@ -559,15 +505,8 @@ int main(int argc, char **argv)
                     erase_and_record_pattern(N, of);
                     continue;
                 }
-
-                // for(pattern P : cases) {
-                //     SO6 post = P*N;
-                //     if(post.getLDE() == -1) {
-                //         file_stream[current_thread] << N.circuit_string() << std::endl;
-                //     }
-                // }
             }
- 
+
             for (const SO6 &G : generating_set[curr_T_count-stored_depth_max - 1])
             {
                 SO6 N = G*S; 
