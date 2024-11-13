@@ -1,7 +1,7 @@
 # Exact Synthesis Codebase
 
 ## Overview
-This repository contains the code for exact synthesis algorithms, designed to explore synthesis methods within the context of quantum computing and mathematical modeling. The core of the project is implemented in C++, featuring various classes, algorithms, and utility scripts for running computations, analyzing results, and testing.
+This repository contains the code for exact quantum circuit synthesis on 2 qubit Clifford+T circuits. The core of the project is implemented in C++, featuring various classes, algorithms, and utility scripts for compiling circuits, analyzing results, and testing. 
 
 ## File Structure
 - **Source Code**
@@ -28,6 +28,10 @@ This repository contains the code for exact synthesis algorithms, designed to ex
 3. Build the project using `make`:
    ```sh
    make
+   ```
+4. Ensure that there is a directory `data`:
+   ```sh
+   mkdir data
    ```
 
 ## Running the Code
