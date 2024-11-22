@@ -9,17 +9,20 @@
 #include <vector>
 #include <chrono>
 #include <omp.h>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_unordered_set.h>
 #include "pattern.hpp" // Assuming this is your custom class
 #include "SO6.hpp"     // Assuming this is your custom class
 
 // Threading and performance tracking
 extern uint8_t THREADS;
-extern omp_lock_t lock;
+extern omp_lock_t omp_lock;
 extern std::chrono::high_resolution_clock::time_point tcount_init_time;
 extern std::chrono::duration<double> timeelapsed;
 
 // Pattern handling and search settings
-extern std::set<pattern> pattern_set;
+// extern tbb::concurrent_hash_map<pattern, bool, PatternHash> pattern_set;
+extern tbb::concurrent_unordered_set<pattern, PatternHash> pattern_set;
 extern std::set<pattern> case_set;
 extern std::vector<pattern> cases;
 // extern std::set<SO6> explicit_search_set;

@@ -7,6 +7,8 @@
 #include <random>
 #include <sstream>
 #include <bitset>
+#include <tbb/concurrent_set.h>
+#include <tbb/parallel_for.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
 
@@ -67,13 +69,24 @@ public:
      * @param s Set of SO6 to be converted.
      * @return A shuffled vector containing the elements originally in the set.
      */
-    static std::vector<SO6> convert_to_vector_and_clear(std::set<SO6>& s) {
-        std::vector<SO6> v(std::make_move_iterator(s.begin()), std::make_move_iterator(s.end()));
-        s.clear(); // Clear the set
-        std::random_device rd;
-        std::mt19937 g(rd());
-        std::shuffle(v.begin(), v.end(), g);
-        return v;  // Return vector
+    static std::vector<SO6> convert_to_vector_and_clear(tbb::concurrent_set<SO6>& s) {
+        std::vector<SO6> v;
+        v.reserve(s.size()); // Reserve space to avoid reallocations
+        
+        // Explicitly move elements from the set into the vector
+        for (auto it = s.begin(); it != s.end(); ++it) {
+            v.push_back(std::move(*it));
+        }
+        
+        s.clear(); // Clear the set after moving elements
+        
+        // Shuffle the vector
+        if (!v.empty()) {
+            static thread_local std::mt19937 g(std::random_device{}());
+            std::shuffle(v.begin(), v.end(), g);
+        }
+        
+        return v; // Return the shuffled vector
     }
 
     static std::string convert_csv_line_to_binary(const std::string& line) {
@@ -98,13 +111,22 @@ public:
      * @param A Set from which elements will be erased.
      * @param B Set containing elements to be removed from A.
      */
+    // template<typename T>
+    // static void setDifference(tbb::concurrent_set<T>& A, const tbb::concurrent_set<T>& B) {
+    //     for (auto it = B.begin(); it != B.end(); ++it) {
+    //         A.unsafe_erase(*it);
+    //     }
+    // }
     template<typename T>
-    static void setDifference(std::set<T>& A, const std::set<T>& B) {
-        for (auto it = B.begin(); it != B.end(); ++it) {
-            A.erase(*it);
+    static void setDifference(tbb::concurrent_set<T>& A, const tbb::concurrent_set<T>& B) {
+        tbb::concurrent_set<T> result;
+        for (const auto& elem : A) {
+            if (B.find(elem) == B.end()) {
+                result.insert(elem);
+            }
         }
+        A.swap(result); // Efficiently replace A with the new set
     }
-
 
     /**
      * @brief Rotates and clears sets for the next iteration.
@@ -112,8 +134,8 @@ public:
      * @param current Set to be moved to prior.
      * @param next Set to be moved to current.
      */
-    static void rotate_and_clear(std::set<SO6>& prior, std::set<SO6>& current, std::set<SO6>& next) {
-        std::set<SO6>().swap(prior); // Clear prior
+    static void rotate_and_clear(tbb::concurrent_set<SO6>& prior, tbb::concurrent_set<SO6>& current, tbb::concurrent_set<SO6>& next) {
+        tbb::concurrent_set<SO6>().swap(prior); // Clear prior
         prior.swap(current); // Move current to prior
         current.swap(next); // Move next to current
     }
@@ -187,8 +209,8 @@ public:
             uint8_t fsm = mask_at_index(first_sign_mask, i);
             uint8_t ssm = mask_at_index(second_sign_mask, i);
 
-            if((comp1 == Less)^(fsm==NEG)) first_sign_mask = ~first_sign_mask;
-            if((comp2 == Less)^(ssm==NEG)) second_sign_mask = ~second_sign_mask;
+            if((comp1 == Less)^(fsm==NEG)) first_sign_mask ^= 0xFFFF;
+            if((comp2 == Less)^(ssm==NEG)) second_sign_mask ^= 0xFFFF;
                 
             break;
         }
