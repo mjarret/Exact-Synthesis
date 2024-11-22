@@ -549,23 +549,20 @@ pattern SO6::to_pattern() const
     ret.hist = hist;
 
     const int8_t& lde = getLDE();
-    for (int col = 0; col < 6; col++)
+    for (int col = 0; col < 6; col++) for (int row = 0; row < 6; row++)
     {
-        for (int row = 0; row < 6; row++)
-        {
-            if (arr[row + (col<<2) + (col<<1)].exponent < lde - 1 || arr[row + (col<<2) + (col<<1)].intPart==0) {
-                continue;
-            }
-            if (arr[row + (col<<2) + (col<<1)].exponent == lde)
-            {
-                ret.arr[col][row].first = 1;
-                ret.arr[col][row].second = arr[row + (col<<2) + (col<<1)].sqrt2Part % 2;
-                continue;
-            }
-            ret.arr[col][row].second = 1;
+        if (arr[row + (col<<2) + (col<<1)].exponent < lde - 1 || arr[row + (col<<2) + (col<<1)].intPart == 0) {
+            continue;
         }
+        if (arr[row + (col<<2) + (col<<1)].exponent == lde)
+        {
+            ret.arr[col][row].first = 1;
+            ret.arr[col][row].second = arr[row + (col<<2) + (col<<1)].sqrt2Part % 2;
+            continue;
+        }
+        ret.arr[col][row].second = 1;
     }
-    ret.lexicographic_order();
+
     return ret;
 }
 
