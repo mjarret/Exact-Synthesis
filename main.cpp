@@ -37,7 +37,7 @@ static tbb::concurrent_unordered_set<pattern, PatternHash> permutation_set(patte
     tbb::concurrent_unordered_set<pattern, PatternHash> perms;
     tbb::concurrent_set<pattern> inits;
     inits.insert(pat);
-    inits.insert(pat.transpose());
+    // inits.insert(pat.transpose());
 
     for(pattern p : inits) {
         perms.insert(p); 
@@ -52,10 +52,8 @@ static tbb::concurrent_unordered_set<pattern, PatternHash> permutation_set(patte
             for (int c = 0; c < 6; c++)
             {
                 for (int r = 0; r < 6; r++)
-                    perm_of_orig.arr[c][r] = p.arr[c][row[r]];
+                    perm_of_orig.set(r,c, p.get(row[r],c));
             }
-            // Order the new pattern lexicographically and insert it into the set
-            perm_of_orig.lexicographic_order();
             perms.insert(perm_of_orig);
             // Iterate over all possible combinations of row modifications
             for(unsigned int counter = 0; counter < (1 << 6); counter++) {
@@ -66,8 +64,6 @@ static tbb::concurrent_unordered_set<pattern, PatternHash> permutation_set(patte
                         mod_of_perm.mod_row(j);
                     }
                 }
-                // Order the modified pattern lexicographically and insert it into the set
-                mod_of_perm.lexicographic_order();
                 perms.insert(mod_of_perm);
             }
         }
@@ -124,20 +120,14 @@ static void read_pattern_file(std::string pattern_file_path)
         return;
     }
 
-    bool isCSV = pattern_file_path.substr(pattern_file_path.find_last_of(".") + 1) == "csv";    
-
      // Renamed for clarity
     std::string line;
     while (std::getline(patternFile, line))
     {
-        std::string binaryString = isCSV ? utils::convert_csv_line_to_binary(line) : line;
-        pattern currentPattern(binaryString); // More descriptive name
+        pattern currentPattern(line); 
         currentPattern.id = line;
-        currentPattern.lexicographic_order();
-        // std::cout << currentPattern;
         insert_all_permutations(currentPattern);
     }
-
     patternFile.close(); // Close file after processing
 
     // Handle special case of the identity pattern
@@ -145,38 +135,6 @@ static void read_pattern_file(std::string pattern_file_path)
     pattern_set.unsafe_erase(identityPattern);
     pattern_set.unsafe_erase(identityPattern.pattern_mod());
     std::cout << "[Finished] Loaded " << pattern_set.size() << " non-identity patterns." << std::endl;
-}
-
-/// @brief Reads binary patterns from a file and processes them.
-///        Each line in the file is expected to be a binary string representing a pattern.
-///        This function converts each line into a pattern object, orders it lexicographically,
-///        inserts all its permutations into a set, and then handles the identity pattern.
-static void read_case_file(std::string path)
-{
-    std::ifstream file(path); // More descriptive variable name
-
-    if (!file.is_open())
-    {
-        std::cerr << "Failed to open template file: " << path << std::endl;
-        return;
-    }
-
-     // Renamed for clarity
-    std::string line;
-    while (std::getline(file, line))
-    {
-        std::string binaryString = line;
-        if(line.length()!=36) {
-            std::cout << "Invalid template!\n";
-            std::exit(EXIT_FAILURE);
-        }
-        pattern currentPattern(binaryString); // More descriptive name
-        currentPattern.case_order();
-        cases.push_back(currentPattern);
-        std::cout << currentPattern.case_string();
-        std::cout << "Case number " << currentPattern.case_number() << "\n";
-    }
-    file.close(); // Close file after processing
 }
 
 static std::chrono::_V2::high_resolution_clock::time_point now()
@@ -344,71 +302,6 @@ void storeCosets(int curr_T_count,
     }
 }
 
-// tbb::concurrent_set<SO6> SO6s_starting_at(SO6 &tree_root, const int &depth) {
-
-//     tbb::concurrent_set<SO6> prior, current = tbb::concurrent_set<SO6>({tree_root});
-
-//     for (int curr_T_count = 0; curr_T_count < depth; ++curr_T_count)
-//     {
-//         tbb::concurrent_set<SO6> next;
-//         for (int T = 0; T < 15; T++)
-//         {                
-//             for(const SO6& S : current)
-//             {
-//                 SO6 toInsert = S.left_multiply_by_T(T);
-//                 next.insert(toInsert);  
-//             }
-//         }
-//         utils::setDifference(next,prior);
-//         utils::rotate_and_clear(prior, current, next); // current is now ready for next iteration
-//     }
-
-//     return current;
-// }
-
-// tbb::concurrent_set<pattern> patterns_starting_at(SO6 &tree_root, const int &depth) {
-
-//     tbb::concurrent_set<SO6> prior, current = tbb::concurrent_set<SO6>({tree_root});
-//     tbb::concurrent_set<pattern> found_patterns = tbb::concurrent_set<pattern>({tree_root.to_pattern()});
-//     bool flag = false;
-//     tbb::concurrent_hash_map<pattern, bool, PatternHash>::accessor accessor;
-//     for (int curr_T_count = 0; curr_T_count < depth; ++curr_T_count)
-//     {
-//         if(curr_T_count == depth-1) std::cout << "Depth: " << curr_T_count << " Current size: " << current.size() << std::endl;
-//         tbb::concurrent_set<SO6> next;
-//         for (int T = 0; T < 15; T++)
-//         {                
-//             for(const SO6& S : current)
-//             {
-//                 SO6 toInsert = S.left_multiply_by_T(T);
-//                 pattern p = toInsert.to_pattern();
-//                 p.lexicographic_order();
-//                 found_patterns.insert(p);
-//                 // if(pattern_set.find(accessor, p)) {
-//                 if(pattern_set.contains(p)) {
-//                     std::cout << "Pattern not found: " << p << std::endl;
-//                     std::cout << S << std::endl;
-//                     std::cout << toInsert << std::endl;
-//                     std::cin.get();
-//                     flag = true;
-//                     break;
-//                 }
-//                 next.insert(toInsert);  
-//             }
-//         }
-//         utils::setDifference(next,prior);
-//         utils::rotate_and_clear(prior, current, next); // current is now ready for next iteration
-//         if(flag) {
-//             for(pattern p : found_patterns) {
-//                 erase_all_permutations(p);
-//             }
-//             break;
-//         }
-//     }
-
-//     return found_patterns;
-// }
-
 /**
  * @brief The main function of the program.
  *
@@ -461,7 +354,7 @@ int main(int argc, char **argv)
                 }
             }
         }
-        for(auto p : patterns) erase_all_permutations(p);
+        // for(auto p : patterns) erase_all_permutations(p);
 
         utils::rotate_and_clear(prior, current, next); // current is now ready for next iteration
         finish_io(current.size(), true, of);
