@@ -2,17 +2,19 @@
 #include <thread> 
 #include "utils.hpp"
 #include <boost/program_options.hpp>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_unordered_set.h>
 
 namespace po = boost::program_options;
 
 // Threading and performance tracking
 uint8_t THREADS; //store maximum number of threads here
-omp_lock_t lock;
+omp_lock_t omp_lock;
 std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::high_resolution_clock::now(); // Initialize with current time
 std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(); // Initialize as zero
 
 // Pattern handling and search settings
-std::set<pattern> pattern_set;          
+tbb::concurrent_unordered_set<pattern, PatternHash> pattern_set;         
 std::vector<pattern> cases;
 std::string pattern_file = "";
 std::string case_file = "";

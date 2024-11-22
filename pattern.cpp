@@ -1,7 +1,10 @@
 #include <iostream>
 #include <vector>
+#include <array>
 #include <algorithm>
 #include <stdint.h>
+#include <cstdint>
+#include <functional>
 #include "pattern.hpp"
 
 pattern::pattern() {
@@ -53,8 +56,21 @@ std::string pattern::generateBinaryString(const std::string& text) {
     return binaryString;
 }
 
-const bool* pattern::to_binary() const{
-    static bool binary_rep[72];
+// const bool* pattern::to_binary() const{
+//     static bool binary_rep[72];
+//     for (int col = 0; col < 6; col++)
+//     {
+//         for (int row = 0; row < 6; row++)
+//         {
+//             binary_rep[2 * col + 12 * row] = arr[col][row].first; 
+//             binary_rep[2 * col + 12 * row + 1] = arr[col][row].second; 
+//         }
+//     }
+//     return binary_rep;
+// }
+
+const std::array<bool,72> pattern::to_binary() const{
+    std::array<bool,72> binary_rep;
     for (int col = 0; col < 6; col++)
     {
         for (int row = 0; row < 6; row++)
@@ -275,7 +291,7 @@ std::string pattern::case_string()
     return os;
 }
 
-std::string pattern::name()
+std::string pattern::name() const
 {
     std::string ret = "";
     for (char i : hist)
@@ -345,7 +361,7 @@ const int pattern::case_number() {
 std::string pattern::human_readable() 
 {
     std::string ret = "";
-    const bool* tmp = to_binary();
+    std::array<bool,72> tmp = to_binary();
     for(int row=0; row<6; row++) {
         ret+= "[";
         for(int col=0; col<6; col++) {
