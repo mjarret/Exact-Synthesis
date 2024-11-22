@@ -124,11 +124,11 @@ SO6::SO6(pattern &other)
 {
     for (int col = 0; col < 6; col++) {
         for (int row = 0; row < 6; row++) {
-            if (other.arr[col][row].first == 0 && other.arr[col][row].second == 0) {
+            if (other.get(row,col).first == 0 && other.get(row,col).second == 0) {
                 continue;  // Skip this iteration if both `first` and `second` are zero
             }
-            bool second_arg = other.arr[col][row].first == 0 ? other.arr[col][row].first : other.arr[col][row].second;
-            arr[(col << 2) + (col << 1) + row] = Z2(other.arr[col][row].first || other.arr[col][row].second, second_arg, other.arr[col][row].first);
+            bool second_arg = other.get(row,col).first == 0 ? other.get(row,col).first : other.get(row,col).second;
+            arr[(col << 2) + (col << 1) + row] = Z2(other.get(row,col).first || other.get(row,col).second, second_arg, other.get(row,col).first);
         }
     }
 
@@ -190,8 +190,8 @@ SO6 SO6::operator*(const pattern &other) const
 
             for (int col = 0; col < 6; col++)
             {
-                if(other.arr[col][k].first) prod[col][row] += left_element;
-                if(other.arr[col][k].second) prod[col][row] += smallerLDE;
+                if(other.get(k,col).first) prod.get_element(row,col) += left_element;
+                if(other.get(k,col).second) prod.get_element(row,col) += smallerLDE;
             }
         }
     }
@@ -551,16 +551,14 @@ pattern SO6::to_pattern() const
     const int8_t& lde = getLDE();
     for (int col = 0; col < 6; col++) for (int row = 0; row < 6; row++)
     {
-        if (arr[row + (col<<2) + (col<<1)].exponent < lde - 1 || arr[row + (col<<2) + (col<<1)].intPart == 0) {
-            continue;
-        }
-        if (arr[row + (col<<2) + (col<<1)].exponent == lde)
+        const auto& z = get_element(row,col);
+        if (z.exponent < lde - 1 || z.intPart == 0) continue;
+        if (z.exponent == lde)
         {
-            ret.arr[col][row].first = 1;
-            ret.arr[col][row].second = arr[row + (col<<2) + (col<<1)].sqrt2Part % 2;
+            ret.set(row,col, {1, z.sqrt2Part & 1});
             continue;
         }
-        ret.arr[col][row].second = 1;
+        ret.set(row,col,{0,1});
     }
 
     return ret;

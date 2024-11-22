@@ -5,22 +5,28 @@
 #include <stdint.h>
 #include <cstdint>
 #include <functional>
+#include <compare>
 #include "pattern.hpp"
 
 pattern::pattern() {
 }
 
 pattern::pattern(const bool binary_rep[72]) {
-    for (int col = 0; col < 6; col++)
-    {
-        for (int row = 0; row < 6; row++)
-        {
-            arr[col][row].first = binary_rep[2 * col + 12 * row]; 
-            arr[col][row].second = binary_rep[2 * col + 12 * row + 1]; 
-        }
+    for (int col = 0; col < 6; col++) for (int row = 0; row < 6; row++) {
+        // Extract the first and second bits for the current row and column
+        bool first = binary_rep[2 * col + 12 * row];
+        bool second = binary_rep[2 * col + 12 * row + 1];
+
+        // Use the set method to store the values
+        set(row, col, {first, second});
     }
-    lexicographic_order();
 }
+
+pattern::pattern(const uint64_t first_rows, const uint8_t final_row) {
+    this->first_rows = first_rows;
+    this->final_row = final_row;
+}
+
 
 pattern::pattern(const std::string &binary_string) {
     bool binary_rep[72] = {0}; // Array representing binary pattern
@@ -34,7 +40,6 @@ pattern::pattern(const std::string &binary_string) {
             std::exit(0);
         }
         *this = pattern(copyOfBS);
-        lexicographic_order();
         return;
     }
     for (char digit : binary_string)
@@ -43,7 +48,6 @@ pattern::pattern(const std::string &binary_string) {
         index+=iter;
     }
     *this = pattern(binary_rep);
-    lexicographic_order();
 }
 
 std::string pattern::generateBinaryString(const std::string& text) {
@@ -56,134 +60,50 @@ std::string pattern::generateBinaryString(const std::string& text) {
     return binaryString;
 }
 
-// const bool* pattern::to_binary() const{
-//     static bool binary_rep[72];
-//     for (int col = 0; col < 6; col++)
-//     {
-//         for (int row = 0; row < 6; row++)
-//         {
-//             binary_rep[2 * col + 12 * row] = arr[col][row].first; 
-//             binary_rep[2 * col + 12 * row + 1] = arr[col][row].second; 
-//         }
-//     }
-//     return binary_rep;
-// }
-
-const std::array<bool,72> pattern::to_binary() const{
-    std::array<bool,72> binary_rep;
-    for (int col = 0; col < 6; col++)
-    {
-        for (int row = 0; row < 6; row++)
-        {
-            binary_rep[2 * col + 12 * row] = arr[col][row].first; 
-            binary_rep[2 * col + 12 * row + 1] = arr[col][row].second; 
-        }
-    }
-    return binary_rep;
+std::strong_ordering pattern::operator<=>(const pattern &other) const
+{
+    std::strong_ordering result = first_rows <=> other.first_rows;
+    if(result != std::strong_ordering::equal) return result;
+    else return final_row <=> other.final_row;
 }
 
 bool pattern::operator==(const pattern &other) const {
-    for(int col = 0; col < 6; col++) {
-        for(int row = 0; row < 6; row++) {
-            if(arr[col][row] != other.arr[col][row]) return false;
-        }
-    }
-    return true;
-}
-
-/**
- * Overloads the * operator with matrix multiplication for SO6 objects
- * @param other reference to pattern to be multiplied with (*this)
- * @return matrix multiplication of (*this) and other
- */
-SO6 pattern::operator*(const SO6 &other) const
-{
-    SO6 prod;
-    prod.hist = other.hist; 
-
-    for (int col = 0; col < 6; col++)
-    {
-        for (int k = 0; k < 6; k++)
-        {
-            const Z2& left_element = other[col][k];            
-            if (left_element.intPart == 0) continue;    
-            
-            Z2 smallerLDE = left_element;
-            smallerLDE.exponent--; //decrease lde
-
-            for (int row = 0; row < 6; row++)
-            { 
-                if(arr[k][row].first) prod[col][row] += left_element;
-                if(arr[k][row].second) prod[col][row] += smallerLDE; 
-            }
-        }
-    }
-    return prod;
+    return (*this <=> other) == std::strong_ordering::equal;
 }
 
 bool pattern::operator<(const pattern &other) const {
-    for(int col = 0; col < 6; col++) {
-        for(int row = 0; row < 6; row++) {
-            if(arr[col][row] == other.arr[col][row]) {
-                continue;
-            }
-            return arr[col][row] < other.arr[col][row];
-        }
-    }
-    return false;
+    return (*this <=> other) == std::strong_ordering::less;
 }
 
-int8_t pattern::lex_order(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
+std::strong_ordering pattern::lex_order(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
+    std::strong_ordering result = std::strong_ordering::equal;
     for (int row = 0; row < 6; row++)
     {
-        if (first[row] == second[row]) {
-            continue;
-        }
-        if (first[row] > second[row])           // Reverse ordering is better for tests
-            return -1;
-        return 1;
+        result = first[row] <=> second[row];
+        if (result == std::strong_ordering::equal) continue;
+        return result;
     }
-    return 0;
+    return std::strong_ordering::equal;
 }
 
-int8_t pattern::case_compare(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
+std::strong_ordering pattern::case_compare(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
-    for (int row = 0; row < 6; row++)
-    {
-        if (first[row].first == second[row].first) {
-            continue;
-        }
-        if (first[row].first > second[row].first)           // Reverse ordering is better for tests
-            return -1;
-        return 1;
+    std::strong_ordering result = lex_order(first,second);
+    if(result != std::strong_ordering::equal) {
+        return (result == std::strong_ordering::less) ? std::strong_ordering::greater : std::strong_ordering::less;
     }
-    return 0;
+    return std::strong_ordering::equal;
 }
 
 bool pattern::lex_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
-    return (pattern::lex_order(first,second)<0);
+    return (pattern::lex_order(first,second)==std::strong_ordering::less);
 }
 
 bool pattern::case_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
 {
-    return (pattern::case_compare(first,second)<0);
-}
-
-void pattern::lexicographic_order() {
-    for (int i = 1; i < 6; i++)
-    {
-        for (int j = i; j > 0 && pattern::lex_less(arr[j],arr[j-1]); j--)  std::swap(arr[j], arr[j - 1]);
-    }
-}
-
-
-void pattern::case_order() {
-    for (int i = 1; i < 6; i++)
-    {
-        for (int j = i; j > 0 && pattern::case_less(arr[j],arr[j-1]); j--)  std::swap(arr[j], arr[j - 1]);
-    }
+    return (pattern::case_compare(first,second)==std::strong_ordering::less);
 }
 
 /// @brief 
@@ -192,36 +112,21 @@ pattern pattern::pattern_mod() {
     pattern ret = *this;
     for (int col = 0; col < 6; col++) {
         for(int row = 0; row < 6; row++) {
-            if(ret.arr[col][row].first == 0) continue;
-            ret.arr[col][row].second = !ret.arr[col][row].second; 
+            auto value = ret.get(row,col);
+            if(value.first == 0) continue;
+            ret.set(row,col,{value.first,!value.second});
         }
     }
-    ret.lexicographic_order();
     return ret;
 }
 
 void pattern::mod_row(const int &row) {
     for (int col = 0; col < 6; col++) {
-        if(this->arr[col][row].first == 0) continue;
-        this->arr[col][row].second = !this->arr[col][row].second; 
+        auto value = get(row,col);
+        if(value.first == 0) continue;
+        set(row,col,{value.first,!value.second});
     }
 }
-
-
-pattern pattern::transpose() {
-    pattern ret = *this;
-    for (int col = 0; col < 6; col++) {
-        for(int row = col+1; row < 6; row++) {
-            std::swap(ret.arr[col][row],ret.arr[row][col]);
-        }
-    }
-    ret.lexicographic_order();
-    return ret;
-}
-
-// void pattern::row_sort_by_column(const int & col) {
-
-// }
 
 /**
  * Overloads << function for SO6.
@@ -241,7 +146,7 @@ std::ostream &operator<<(std::ostream &os, const pattern &m)
         else
             os << "| ";
         for (int col = 0; col < 6; col++)
-            os << m.arr[col][row].first << ',' << m.arr[col][row].second << ' ';
+            os << m.get(row,col).first << ',' << m.get(row,col).second << ' ';
         if (row == 0)
             os << "⌉\n";
         else if (row == 5)
@@ -275,7 +180,7 @@ std::string pattern::case_string()
         else
             os += "| ";
         for (int col = 0; col < 6; col++)
-            os += arr[col][row].first ? "\xCE\x94 " : "  " ;
+            os += get(row,col).first ? "\xCE\x94 " : "  " ;
         if (row == 0)
             os += "⌉\n";
         else if (row == 5)
@@ -303,69 +208,21 @@ std::string pattern::name() const
 
 // If needed, we can make this routine a bit faster by eliminating lexicographic ordering
 // since we can just count 1s to distinguish most of these
-const int pattern::case_number() {
-    this->lexicographic_order();
-    // Case 1,2,5,7 all have at most 2 entries per row
-    // Thus, after lexicographic ordering of the columns
-    // these two entries will always be in columns 0 or 1
-    if(!arr[2][0].first) {
-        // This is now case 1,2,5,7
-        // Case 1,2 both have 4 empty columns.
-        // Thus, after lex ordering, columns 2-5 of case 5,7 will be empty
-        if(arr[2][2].first) {
-            // This is now case 5,7
-            // Case 5 has 2 empty columns. 
-            // Thus, after lex ordering, column 4,5 will be empty
-            return arr[4][4].first ? 7 : 5;
-        }
-        // This is now case 1,2
-        // Case 1 has 4 empty rows and case 2 has 2 empty rows
-        // Thus, we can't return this as easily without some more work
-        int row_sum = 0;
-        for(int row = 0; row < 5; row ++) row_sum+= arr[0][row].first;
-        return row_sum > 2 ? 2 : 1;
-    }
-    // This is now case 3,4,6,8
-    // Case 3,4 has two empty columns
-    if(arr[4][2].first) {
-        // This is now case 6,8. Case 6 has two empty rows
-        for(int row=0; row <5; row++) {
-            if(!arr[0][row].first) {
-                for(int col=0; col <5; col ++) {
-                    if(arr[col][row].first) break;
-                }
-                return 6;
-            }
-            return 8;
-        }
-    }
+const uint8_t pattern::case_number() {
+
     // This is now case 3,4. Case three has two rows with only two 1s. Column 2 will always distinguish these.
     int row_sum=0;
-    for(int row = 0; row<5; row++) row_sum+=arr[2][row].first;
+    for(int row = 0; row<5; row++) row_sum+=get(row,2).first;
     return row_sum>2 ? 3 : 4;
 }
-
-// std::string pattern::human_readable() 
-// {
-//     std::string ret = "";
-//     bool* tmp = to_binary();
-//     for(int i=0; i<72; i+=2) {
-//         if(i%12 == 0) ret += "[";
-//         ret += std::to_string(tmp[i]) + " " + std::to_string(tmp[i+1]);
-//         if((i+2)%12 == 0) ret += "]";
-//         else ret += ",";
-//     }
-//     return ret;
-// }
 
 std::string pattern::human_readable() 
 {
     std::string ret = "";
-    std::array<bool,72> tmp = to_binary();
     for(int row=0; row<6; row++) {
         ret+= "[";
         for(int col=0; col<6; col++) {
-            ret += std::to_string(arr[col][row].first) + " " + std::to_string(arr[col][row].second);
+            ret += std::to_string(get(row,col).first) + " " + std::to_string(get(row,col).second);
             if(col<5) ret += ",";
         }
         ret+= "]";
@@ -376,7 +233,7 @@ std::string pattern::human_readable()
 bool pattern::case_equals(const pattern & other) const {
     for(int col = 0; col<6; col++) {
         for(int row = 0; row <6; row++) {
-            if(other.arr[col][row].first != arr[col][row].first) return false;
+            if(other.get(row,col).first != get(row,col).first) return false;
         }
     }
     return true;
