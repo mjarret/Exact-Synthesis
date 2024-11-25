@@ -11,6 +11,7 @@
 #include <tbb/parallel_for.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
+#include "utils.hpp"
 
 
 /**
@@ -383,8 +384,6 @@ public:
     }
 
 };
-
-
 
 // static bool is_valid_pattern(pattern pat) {
 //     SO6 S, St;
