@@ -1,13 +1,6 @@
 #ifndef UINT72_T_HPP
 #define UINT72_T_HPP
 
-#include <cstdint>
-#include <cstddef>
-#include <stdexcept>
-#include <bitset>
-#include <string>
-#include <algorithm>
-
 class uint72_t {
 public:
     uint64_t low_bits;   // First 64 bits

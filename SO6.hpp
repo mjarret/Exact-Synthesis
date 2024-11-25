@@ -4,8 +4,6 @@
 #include <vector>
 #include <map>
 #include <optional>
-#include <compare>
-#include <concepts>
 #include <bitset>
 #include "Z2.hpp"
 #include "pattern.hpp"

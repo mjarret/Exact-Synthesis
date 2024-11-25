@@ -1,9 +1,9 @@
 #include "Globals.hpp"
-#include <thread> 
 #include "utils.hpp"
+#include <thread> 
 #include <boost/program_options.hpp>
-#include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_unordered_set.h>
+#include <tbb/concurrent_set.h>
+#include <omp.h>
 
 namespace po = boost::program_options;
 
@@ -14,7 +14,7 @@ std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::h
 std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(); // Initialize as zero
 
 // Pattern handling and search settings
-tbb::concurrent_unordered_set<pattern, PatternHash> pattern_set;         
+tbb::concurrent_set<pattern> pattern_set;         
 std::vector<pattern> cases;
 std::string pattern_file = "";
 std::string case_file = "";

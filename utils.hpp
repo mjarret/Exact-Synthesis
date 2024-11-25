@@ -1,18 +1,10 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include <vector>
-#include <set>
-#include <algorithm>
-#include <random>
 #include <sstream>
-#include <bitset>
-#include <tbb/concurrent_set.h>
-#include <tbb/parallel_for.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
 #include "utils.hpp"
-
 
 /**
  * @file utils.hpp

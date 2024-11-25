@@ -1,11 +1,3 @@
-#include <iostream>
-#include <vector>
-#include <array>
-#include <algorithm>
-#include <stdint.h>
-#include <cstdint>
-#include <functional>
-#include <compare>
 #include "pattern.hpp"
 
 /**
@@ -64,6 +56,11 @@ void pattern::operator=(const pattern& other) {
 void pattern::set(const int bit_pos, const bool& value) {
     uint72_t clear = ~uint72_t(1ULL << bit_pos, 0);
     pattern_data = (pattern_data & clear) | (uint72_t(value << bit_pos, 0));
+}
+
+void pattern::set(const int row, const int col, uint8_t value) {
+    int bit_pos = bit_position(row, col);
+    pattern_data = pattern_data.set_pair(bit_pos, value & 0b11);
 }
 
 /**

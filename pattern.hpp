@@ -2,14 +2,9 @@
 #define PATTERN_HPP
 
 #include <iostream>
-#include <vector>
-#include <utility> // For std::pair
-#include <compare>
 #include <functional> // For std::hash
-#include <cstddef> // for std::int
 #include "SO6.hpp"
 #include "uint72_t.hpp" // uint72_t for data
-
 
 class SO6;
 
