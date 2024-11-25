@@ -9,8 +9,45 @@
 #include "utils.hpp"
 #include "pattern.hpp"
 #include <iostream>           // For standard input/output
-#include <cassert>            // For assert
+#include <iomanip>            // For std::setw, std::setfill
+#include <cassert>            // For assert // For tbb::concurrent_set
 #include "uint72_t.hpp"
+
+#include <iostream>
+#include <bitset>
+#include <array>
+#include <cstdint>
+#include "uint72_t.hpp" // Assuming your uint72_t implementation is in this file
+
+// Function to generate a row mask
+template<int col>
+constexpr uint72_t generate_row_mask() {
+    static_assert(col >= 0 && col < 6, "Row index must be between 0 and 5");
+
+    uint72_t mask;
+    for (int row = 0; row < 6; ++row) {
+        int pos = (col << 3) + (col << 2) + (row << 1); // Compute bit position
+        mask.set_pair(pos, 0b11);                       // Set pair of bits
+    }
+    return mask;
+}
+
+// Generate all masks at compile time
+constexpr std::array<uint72_t, 6> precomputed_masks = {
+    generate_row_mask<0>(),
+    generate_row_mask<1>(),
+    generate_row_mask<2>(),
+    generate_row_mask<3>(),
+    generate_row_mask<4>(),
+    generate_row_mask<5>()
+};
+
+// Utility to print a uint72_t in hexadecimal format
+void print_uint72_hex(const uint72_t& value) {
+    // Print `high_bits` followed by `low_bits`
+    std::cout << "uint72_t(0x" << std::setfill('0') << std::setw(16) << std::hex << value.low_bits << ",0x" << std::flush <<std::setfill('0') << std::setw(2) << std::hex << value.high_bits << ")" << std::endl;
+
+}
 
 // Utility function to print test case results
 void print_test(const std::string& test_name, bool result) {
@@ -315,6 +352,8 @@ std::vector<SO6> get_all_permutations(const SO6& original) {
 
 // Main function for running tests
 int main(int argc, char **argv) {
+
+
     test_uint72_t(); // Run tests for uint72_t
 
     pattern pat;

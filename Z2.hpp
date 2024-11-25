@@ -1,5 +1,7 @@
 #ifndef Z2_HPP
 #define Z2_HPP
+#include<compare>
+#include<iostream>
 
 typedef int8_t z2_int;
 typedef uint8_t uz2_int;
@@ -30,16 +32,7 @@ public:
     Z2& operator=(const z2_int&); //function that makes the operator have equal entries to parameter
     Z2& operator=(const Z2&); //function that makes the operator have equal entries to parameter
 
-    Z2 abs(); //function that returns the magnitude of the operator
     Z2 abs() const; //function that returns the magnitude of the operator
-    // Z2 zero_mask() {
-    //     return Z2(3*(intPart==0), 0, 0);
-    // }
-    // static Z2 zero_mask(const Z2 &other) {
-    //     if (other.intPart == 0) {
-    //         return Z2(3, 0, 0);
-    //     }
-    // }
     bool abs_less(const Z2&);
     friend std::ostream& operator<<(std::ostream&,const Z2&); //display
     void negate(){intPart=-intPart;sqrt2Part=-sqrt2Part;}

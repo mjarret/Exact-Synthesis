@@ -112,28 +112,33 @@ std::pair<bool, bool> pattern::get(const int row, const int col) const {
     return {pair >> 1, pair & 1};
 }
 
-template<const int row>
-constexpr const uint72_t pattern::row_mask() const {
-    static_assert(row >= 0 && row < 6, "Row index must be between 0 and 5");
-    return row_mask_memoized<row>; // Return the precomputed result
-}
-
 const uint72_t pattern::get_masked_row(const int row) const {
     switch (row) {
-        case 0: return (pattern_data & row_mask<0>());
-        case 1: return (pattern_data & row_mask<1>());
-        case 2: return (pattern_data & row_mask<2>());
-        case 3: return (pattern_data & row_mask<3>());
-        case 4: return (pattern_data & row_mask<4>());
-        case 5: return (pattern_data & row_mask<5>());
+        case 0: return (pattern_data & row_int_part<0>());
+        case 1: return (pattern_data & row_int_part<1>());
+        case 2: return (pattern_data & row_int_part<2>());
+        case 3: return (pattern_data & row_int_part<3>());
+        case 4: return (pattern_data & row_int_part<4>());
+        case 5: return (pattern_data & row_int_part<5>());
         default: return 0;
     }
 }
 
-const uint16_t pattern::get_column(const int col) const {
-    return (pattern_data.get_bits(bit_position(0, col)) & 0x0FFF); // Assume contiguous in columns
+const uint72_t pattern::get_masked_col(const int col) const {
+    switch (col) {
+        case 0: return (pattern_data & col_int_part<0>());
+        case 1: return (pattern_data & col_int_part<1>());
+        case 2: return (pattern_data & col_int_part<2>());
+        case 3: return (pattern_data & col_int_part<3>());
+        case 4: return (pattern_data & col_int_part<4>());
+        case 5: return (pattern_data & col_int_part<5>());
+        default: return 0;
+    }
 }
 
+const uint8_t pattern::column_weight(const int col) const {
+    return static_cast<uint8_t>((pattern_data & int_part).popcount()<<3+(pattern_data & sqrt2_part).popcount());
+}
 
 /**
  * @brief Computes the case number for the current pattern.
@@ -163,30 +168,20 @@ const uint16_t pattern::get_column(const int col) const {
  */
 const uint8_t pattern::case_num() const {
     if(case_num_memo != 0xFF) return case_num_memo;
-    constexpr uint72_t mask = uint72_t(0xAAAAAAAAAAAAAAAAULL, 0xAA);
-    const int hamming_weight = (pattern_data & mask).popcount();
 
-    // Helper lambda: Count 1s in a column with a specific mask
-    auto count_column_ones = [&](int col) {
-        return __builtin_popcount(get_column(col) & 0xAAAA);
-    };
-
-    // Helper lambda: Count total 1s in a row
-    auto count_row_ones = [&](const int row) {
-        return get_masked_row(row).popcount();
-    };
+    const int hamming_weight = (pattern_data & int_part).popcount();
 
     switch (hamming_weight) {
         case 4: return (case_num_memo = 1);
         case 24: return (case_num_memo = 8);
         case 16: {
-            for(int col = 0; col < 3; col++) if (count_column_ones(col) == 2) return (case_num_memo = 6);
-            for(int row = 0; row < 3; row++) if (count_row_ones(row) == 2) return (case_num_memo = 6);
+            for(int col = 0; col < 3; col++) if (get_masked_col(col).popcount() == 2) return (case_num_memo = 6);
+            for(int row = 0; row < 3; row++) if (get_masked_row(row).popcount() == 2) return (case_num_memo = 6);
             return (case_num_memo = 3);
         }
         case 12: {
             for(int col = 0; col < 3; col++) {
-                int num_ones = count_column_ones(col);
+                int num_ones = get_masked_col(col).popcount();
                 if(num_ones == 4 || num_ones == 0) return (case_num_memo = 4);
             }
             return (case_num_memo = 7);
@@ -194,7 +189,7 @@ const uint8_t pattern::case_num() const {
         case 8: {
             int zero_cols = 0;
             for(int col = 0; col < 4; col++) {          
-                int num_ones = count_column_ones(col);
+                int num_ones = get_masked_col(col).popcount();
                 if(num_ones == 4) return (case_num_memo = 2);
                 else if(num_ones == 0) zero_cols++;
                 if(zero_cols > 2) return (case_num_memo = 2);
@@ -202,7 +197,7 @@ const uint8_t pattern::case_num() const {
             
             int zero_rows = 0;
             for(int row = 0; row < 4; row++) {
-                int num_ones = count_row_ones(row);
+                int num_ones = get_masked_row(row).popcount();
                 if(num_ones == 4) return (case_num_memo = 2);
                 else if(num_ones == 0) zero_rows++;
                 if(zero_rows > 2) return (case_num_memo = 2);
@@ -214,17 +209,7 @@ const uint8_t pattern::case_num() const {
     }
 }
 
-std::string pattern::generateBinaryString(const std::string& text) {
-    std::string binaryString;
-    for (char c : text) {
-        if (c == '0' || c == '1') {
-            binaryString += c;
-        }
-    }
-    return binaryString;
-}
-
-std::strong_ordering pattern::operator<=>(const pattern &other) const
+const std::strong_ordering pattern::operator<=>(const pattern &other) const
 {
     // First compare the case numbers
     std::strong_ordering result = case_num() <=> other.case_num();
@@ -232,45 +217,6 @@ std::strong_ordering pattern::operator<=>(const pattern &other) const
 
     // Need to further distinguish patterns based on sqrt(2) part here
     return result;
-}
-
-bool pattern::operator==(const pattern &other) const {
-    return (*this <=> other) == std::strong_ordering::equal;
-}
-
-bool pattern::operator<(const pattern &other) const {
-    return (*this <=> other) == std::strong_ordering::less;
-}
-
-std::strong_ordering pattern::lex_order(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
-{
-    std::strong_ordering result = std::strong_ordering::equal;
-    for (int row = 0; row < 6; row++)
-    {
-        result = first[row] <=> second[row];
-        if (result == std::strong_ordering::equal) continue;
-        return result;
-    }
-    return std::strong_ordering::equal;
-}
-
-std::strong_ordering pattern::case_compare(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
-{
-    std::strong_ordering result = lex_order(first,second);
-    if(result != std::strong_ordering::equal) {
-        return (result == std::strong_ordering::less) ? std::strong_ordering::greater : std::strong_ordering::less;
-    }
-    return std::strong_ordering::equal;
-}
-
-bool pattern::lex_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
-{
-    return (pattern::lex_order(first,second)==std::strong_ordering::less);
-}
-
-bool pattern::case_less(const std::pair<bool,bool> first[6],const std::pair<bool,bool> second[6])
-{
-    return (pattern::case_compare(first,second)==std::strong_ordering::less);
 }
 
 /// @brief 
@@ -287,7 +233,7 @@ pattern pattern::pattern_mod() {
     return ret;
 }
 
-void pattern::mod_row(const int &r) {
+void pattern::mod_row(const int r) {
     int row = r;
     for (int col = 0; col < 6; col++) {
         auto value = get_val(row,col);
@@ -329,71 +275,4 @@ std::ostream &operator<<(std::ostream &os, const pattern &m)
     }
     os << "\n";
     return os;
-}
-
-/**
- * Overloads << function for SO6.
- * @param os reference to ostream object needed to implement <<
- * @param m reference to SO6 object to be displayed
- * @returns reference ostream with the matrix's display form appended
- */
-std::string pattern::case_string()
-{
-    std::string os = "\n";
-    for (int row = 0; row < 6; row++)
-    {
-        if (row == 0)
-            os += "⌈ ";
-        else if (row == 5)
-            os += "⌊ ";
-        else
-            os += "| ";
-        for (int col = 0; col < 6; col++)
-            os += get(row,col).first ? "\xCE\x94 " : "  " ;
-        if (row == 0)
-            os += "⌉\n";
-        else if (row == 5)
-        {
-            os += "⌋\n";
-        }
-        else
-        {
-            os += "|\n";
-        }
-    }
-    os += "\n";
-    return os;
-}
-
-std::string pattern::name() const
-{
-    std::string ret = "";
-    for (char i : hist)
-    {
-        ret.append(1,i);
-    }
-    return ret;
-}
-
-std::string pattern::human_readable() 
-{
-    std::string ret = "";
-    for(int row=0; row<6; row++) {
-        ret+= "[";
-        for(int col=0; col<6; col++) {
-            ret += std::to_string(get(row,col).first) + " " + std::to_string(get(row,col).second);
-            if(col<5) ret += ",";
-        }
-        ret+= "]";
-    }
-    return ret;
-}
-
-bool pattern::case_equals(const pattern & other) const {
-    for(int col = 0; col<6; col++) {
-        for(int row = 0; row <6; row++) {
-            if(other.get(row,col).first != get(row,col).first) return false;
-        }
-    }
-    return true;
-}
+};

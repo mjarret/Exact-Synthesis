@@ -2,6 +2,7 @@
 #define UTILS_HPP
 
 #include <sstream>
+#include <tbb/concurrent_set.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
 #include "utils.hpp"
