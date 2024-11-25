@@ -357,13 +357,13 @@ bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm
 void SO6::sort_physical_array() {
     Z2 temp[36];
     std::map<Z2,int> temp_rf[6];
-    for(size_t row = 0; row<6; row++) {
-        for(size_t col = 0; col<6; col++) {
+    for(size_t row = 0; row<6; ++row) {
+        for(size_t col = 0; col<6; ++col) {
             temp[(col<<2) + (col<<1) + row] = arr[(Col[col]<<2) + (Col[col] <<1) + Row[row]];
         }
         temp_rf[row] = row_frequency[Row[row]];
     }
-    for(int row =0; row <6 ; row++) {
+    for(int row =0; row <6 ; ++row) {
         Row[row] = row;
         Col[row] = row;
     }
@@ -389,7 +389,7 @@ std::map<std::map<Z2, int>, std::vector<int>> SO6::row_equivalence_classes() {
     std::map<std::map<Z2, int>, std::vector<int>> ret;
 
     // Go in order to maintain sort
-    for (int row = 0; row < 6; row++) {
+    for (int row = 0; row < 6; ++row) {
         std::map<Z2, int> &key = row_frequency[row];
         ret[key].push_back(row);
     }
@@ -401,7 +401,7 @@ std::map<std::map<Z2, int>, int> SO6::entry_frequency_in_cols(std::vector<int>& 
     std::map<std::map<Z2, int>, int> ret;
 
     // Go in order to maintain sort
-    for (int row = 0; row < 6; row++) {
+    for (int row = 0; row < 6; ++row) {
         std::map<Z2, int> next_row;
         for(int col : cols) {
             next_row[get_element(row, col).abs()]--;
@@ -415,7 +415,7 @@ std::map<std::map<Z2, int>, std::vector<int>> SO6::col_equivalence_classes() {
     std::map<std::map<Z2, int>, std::vector<int>> ret;
 
     // Iterate in order to maintain sort
-    for (int col = 0; col < 6; col++) {
+    for (int col = 0; col < 6; ++col) {
         std::map<Z2, int> key = col_frequency[col];
         ret[key].push_back(col);
     }
@@ -529,38 +529,29 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
     return Equal;
 }
 
-const z2_int SO6::getLDE() const
-{
-    z2_int ret;
-    for (int i = 0; i < 6; i++)
-    {
-        for (int j = 0; j < 6; j++)
-        {
-            ret = std::max(ret, (*this)[i][j].exponent);
-        }
-    }
-    return ret;
+const z2_int SO6::getLDE() const {
+    return std::max_element(arr, arr + 36, [](const Z2& a, const Z2& b) {
+        return a.exponent < b.exponent;
+    })->exponent;
 }
 
 pattern SO6::to_pattern() const
 {
-    pattern ret;
+    pattern ret = pattern();
     ret.hist.reserve(hist.size());
     ret.hist = hist;
 
-    const int8_t& lde = getLDE();
-    for (int col = 0; col < 6; col++) for (int row = 0; row < 6; row++)
+    const int8_t lde = getLDE();
+    for(int col = 0; col < 6; ++col) for(int row = 0; row < 6; ++row)
     {
-        const auto& z = get_element(row,col);
+        const auto z = get_element(row,col);
         if (z.exponent < lde - 1 || z.intPart == 0) continue;
-        if (z.exponent == lde)
-        {
-            ret.set(row,col, {1, z.sqrt2Part & 1});
+        if (z.exponent == lde) { 
+            ret.set(row, col, {1, z.sqrt2Part & 1});
             continue;
         }
         ret.set(row,col,{0,1});
     }
-
     return ret;
 }
 

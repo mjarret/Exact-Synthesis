@@ -11,6 +11,7 @@
 #include <omp.h>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_unordered_set.h>
+#include <tbb/concurrent_set.h>
 #include "pattern.hpp" // Assuming this is your custom class
 #include "SO6.hpp"     // Assuming this is your custom class
 
@@ -22,7 +23,7 @@ extern std::chrono::duration<double> timeelapsed;
 
 // Pattern handling and search settings
 // extern tbb::concurrent_hash_map<pattern, bool, PatternHash> pattern_set;
-extern tbb::concurrent_unordered_set<pattern, PatternHash> pattern_set;
+extern tbb::concurrent_set<pattern> pattern_set;
 extern std::set<pattern> case_set;
 extern std::vector<pattern> cases;
 // extern std::set<SO6> explicit_search_set;
