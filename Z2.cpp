@@ -1,7 +1,6 @@
 #include <iostream>
 #include <algorithm>
 #include <stdint.h>
-#include <array>
 #include "Z2.hpp"
 
 // /**

@@ -1,8 +1,6 @@
 #ifndef Z2_HPP
 #define Z2_HPP
 
-#include <array>
-
 typedef int8_t z2_int;
 typedef uint8_t uz2_int;
 

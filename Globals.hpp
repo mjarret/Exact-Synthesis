@@ -3,14 +3,8 @@
 #ifndef GLOBALS_HPP
 #define GLOBALS_HPP
 
-#include <cstdint>
-#include <string>
-#include <set>
-#include <vector>
 #include <chrono>
 #include <omp.h>
-#include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_unordered_set.h>
 #include <tbb/concurrent_set.h>
 #include "pattern.hpp" // Assuming this is your custom class
 #include "SO6.hpp"     // Assuming this is your custom class
@@ -22,12 +16,7 @@ extern std::chrono::high_resolution_clock::time_point tcount_init_time;
 extern std::chrono::duration<double> timeelapsed;
 
 // Pattern handling and search settings
-// extern tbb::concurrent_hash_map<pattern, bool, PatternHash> pattern_set;
 extern tbb::concurrent_set<pattern> pattern_set;
-extern std::set<pattern> case_set;
-extern std::vector<pattern> cases;
-// extern std::set<SO6> explicit_search_set;
-// extern SO6 search_token;
 extern std::string pattern_file;
 extern std::string case_file;
 extern SO6 root;

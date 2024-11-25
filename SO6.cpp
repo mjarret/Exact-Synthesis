@@ -1,22 +1,10 @@
-#include <iostream>
 #include <iomanip>  // For std::setw
 #include <sstream>
-#include <stdint.h>
-#include <vector>
-#include <algorithm>
-#include <bitset>
-#include <bit>
-#include <variant>
-#include <ranges>
-#include <compare>
-#include <concepts>
-#include <omp.h>
 #include <boost/format.hpp>
 #include "SO6.hpp"
 #include "pattern.hpp"
 #include "Globals.hpp"
 #include "utils.hpp"
-#include <map>
 
 // ANSI color codes
 #define RESET "\033[0m"

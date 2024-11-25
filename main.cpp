@@ -9,15 +9,10 @@
  */
 
 #include <chrono>
-#include <set>
 #include <fstream>
-#include <vector>
 #include <omp.h>
-#include <thread>
-#include <dirent.h> // Directory Entry
-#include <tbb/concurrent_set.h>
-#include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_unordered_set.h>
+#include <set>
 #include "Globals.hpp"
 #include "utils.hpp"
 
@@ -31,10 +26,10 @@ using namespace std;
  * 
  * @param p The pattern to permute and modify.
  */
-static tbb::concurrent_unordered_set<pattern, PatternHash> permutation_set(pattern &pat)
+static tbb::concurrent_unordered_set<pattern> permutation_set(pattern &pat)
 {   
     // Insert the original pattern into the set
-    tbb::concurrent_unordered_set<pattern, PatternHash> perms;
+    tbb::concurrent_unordered_set<pattern> perms;
     tbb::concurrent_set<pattern> inits;
     inits.insert(pat);
     // inits.insert(pat.transpose());
@@ -81,13 +76,15 @@ static tbb::concurrent_unordered_set<pattern, PatternHash> permutation_set(patte
  */
 static void insert_all_permutations(pattern &p)
 {   
-    tbb::concurrent_unordered_set<pattern, PatternHash> perms_of_p = permutation_set(p); 
-    pattern_set.insert(perms_of_p.begin(),perms_of_p.end());
+    pattern_set.insert(p);
+    // tbb::concurrent_set<pattern> perms_of_p = permutation_set(p); 
+    // pattern_set.insert(perms_of_p.begin(),perms_of_p.end());
 }
 
 static void erase_all_permutations(pattern &p)
 {
-    tbb::concurrent_unordered_set<pattern, PatternHash> perms_of_p = permutation_set(p);
+    if(!pattern_set.contains(p)) return;
+    tbb::concurrent_unordered_set<pattern> perms_of_p = permutation_set(p);
 
     // Collect keys to erase
     std::set<pattern> keys_to_erase;
@@ -122,9 +119,12 @@ static void read_pattern_file(std::string pattern_file_path)
 
      // Renamed for clarity
     std::string line;
+    int k = 0;
     while (std::getline(patternFile, line))
     {
         pattern currentPattern(line); 
+        int case_num = currentPattern.case_num();
+        if(case_num == 0) continue;
         currentPattern.id = line;
         insert_all_permutations(currentPattern);
     }
@@ -149,13 +149,9 @@ static std::chrono::_V2::high_resolution_clock::time_point now()
 static bool erase_pattern(SO6 &s) {
     pattern pat = s.to_pattern();
     bool ret = false;
-    tbb::concurrent_hash_map<pattern, bool, PatternHash>::accessor accessor;
-    // if (pattern_set.find(accessor,pat)) {
     if (pattern_set.contains(pat)) {
-        // if (pattern_set.find(accessor,pat)) {
         erase_all_permutations(pat);
         ret = true;
-        // } 
     }
     return ret;
 }
@@ -326,6 +322,9 @@ int main(int argc, char **argv)
 
     std::vector<SO6> generating_set[ngs];    
 
+    std::mutex mtx;
+    std::atomic<bool> lock_held{false};
+
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
     {
         tbb::concurrent_set<SO6> next;
@@ -349,12 +348,11 @@ int main(int argc, char **argv)
                 SO6 toInsert = S.left_multiply_by_T(T);
                 if(prior.find(toInsert) == prior.end()) {       // This used to be done by finding the differences later, but this works better with the concurrent set
                     if(next.insert(toInsert).second) {
-                        patterns.insert(toInsert.to_pattern());
+                        erase_and_record_pattern(toInsert, of);
                     }
                 }
             }
         }
-        // for(auto p : patterns) erase_all_permutations(p);
 
         utils::rotate_and_clear(prior, current, next); // current is now ready for next iteration
         finish_io(current.size(), true, of);
