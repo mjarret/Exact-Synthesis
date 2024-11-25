@@ -16,8 +16,6 @@
 #include "Globals.hpp"
 #include "utils.hpp"
 
-using namespace std;
-
 /**
  * @brief Inserts all permutations of a given pattern into a set.
  * 
@@ -125,7 +123,6 @@ static void read_pattern_file(std::string pattern_file_path)
         pattern currentPattern(line); 
         int case_num = currentPattern.case_num();
         if(case_num == 0) continue;
-        currentPattern.id = line;
         insert_all_permutations(currentPattern);
     }
     patternFile.close(); // Close file after processing
@@ -139,7 +136,7 @@ static void read_pattern_file(std::string pattern_file_path)
 
 static std::chrono::_V2::high_resolution_clock::time_point now()
 {
-    return chrono::_V2::high_resolution_clock::now();
+    return std::chrono::_V2::high_resolution_clock::now();
 }
 
 /**
@@ -192,8 +189,8 @@ static void read_dat(std::string file_name) {
 
 static std::string time_since(std::chrono::_V2::high_resolution_clock::time_point &s)
 {
-    chrono::duration<double> duration = now() - s;
-    int64_t time = chrono::duration_cast<chrono::milliseconds>(duration).count();
+    std::chrono::duration<double> duration = now() - s;
+    int64_t time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     if (time < 1000)
         return std::to_string(time).append("ms");
     if (time < 60000)
@@ -256,9 +253,9 @@ static std::ofstream prepare_T_count_io(const int t, uint8_t &stored_depth_max, 
     }
 
     report_begin_T_count(t);
-    std::string file_string = "./data/" + to_string(t) + ".dat";
+    std::string file_string = "./data/" + std::to_string(t) + ".dat";
     std::ofstream of;
-    of.open(file_string, ios::out | ios::trunc);
+    of.open(file_string, std::ios::out | std::ios::trunc);
     if (!of.is_open()) std::exit(0);
     std::cout << " ||\t↪ [Save] Opening file " << file_string << "\n"
               << (t == stored_depth_max + 1 ? " ||\t↪ [Rep] Left multiplying everything by T₀\n" : 

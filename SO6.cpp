@@ -21,67 +21,6 @@ constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
 constexpr auto Equivalent = std::strong_ordering::equivalent;
 
-int SO6::get_pivot_column(std::bitset<6>& columns, std::unordered_map<std::bitset<6>, int>& memo) {
-    std::cout << "Considering submatrix: " << columns << std::endl;
-    unpermuted_print(columns);
-
-    // Memo already contains base cases. Return memo if non-empty
-    if (!memo[columns] == -1) return memo[columns];
-
-    int submatrix_size = columns.count();
-
-    // Lexicographically sort the row
-    std::vector<int> col;
-    for(int i = 0; i < 6; i++) {
-        if(columns.test(i)) {
-            col.push_back(i);
-        }
-    }
-
-    int lex_row = 6 - submatrix_size;
-
-    std::vector<int> pivots;
-    for(int i = 0; i < 6; ++i) {
-        if(!columns.test(i)) pivots.push_back(i);
-    }
-
-    // Find best pivot column. Logic should sort/memoize it while finding the maximum
-    int pivot = *std::max_element(pivots.begin(), pivots.end(), [&](int a, int b) {
-        // return lex_order(a, b, columns, memo, lex_row);
-        return true;
-    });
-
-    std::cout << "Pivot found.";
-    // Check if the pivot element corresponds to Z2(0,0,0)
-    if (get_lex_element(pivot, lex_row).intPart == 0) {
-        memo[columns] = -2;
-    } else {
-        memo[columns] = pivot;
-    }
-    return memo[columns];
-}
-
-std::vector<int> get_permutation(const std::bitset<6>& columns, std::unordered_map<std::bitset<6>, std::vector<int>>& memo) {
-    if(memo.contains(columns)) return memo[columns]; // If it's already computed, return it
-    // Logic to compute the memo for a given column set.
-    // This is where you perform your submatrix computation if necessary.
-    // For the example, we'll return an empty vector.
-    return {};
-}
-
-bool SO6::submatrix_lex_less(std::vector<int> &left_columns, std::vector<int> &right_columns, int start_row) {
-    if (start_row == 6) return false;
-
-    // These were equal, move onto the next submatrix
-    std::vector<int> left_columns_copy = left_columns;
-    std::vector<int> right_columns_copy = right_columns;
-
-    left_columns_copy.erase(left_columns_copy.begin());
-    right_columns_copy.erase(right_columns_copy.begin());
-    // Recursively check the next submatrix
-    return submatrix_lex_less(left_columns_copy, right_columns_copy, start_row + 1);
-}
-
 /**
  * Basic constructor. Initializes Zero matrix.
  *
@@ -93,19 +32,6 @@ SO6::SO6()
     }
     int equivalence_class_size = 1;
 
-}
-
-/**
- * Basic constructor. Initializes to other
- *
- */
-SO6::SO6(Z2 other[6][6])
-{
-    for(int col =0; col<6; col++) {
-        for(int row=0; row <6; row++) {
-            *this[col][row]=other[col][row];
-        }
-    }
 }
 
 SO6::SO6(pattern &other)
@@ -155,38 +81,7 @@ SO6 SO6::operator*(const SO6 &other) const
     return prod;
 }
 
-/**
- * Overloads the * operator with matrix multiplication for SO6 objects
- * @param other reference to pattern to be multiplied with (*this)
- * @return matrix multiplication of (*this) and other
- */
-SO6 SO6::operator*(const pattern &other) const
-{
-    // multiplies operators assuming COLUMN,ROW indexing
-    SO6 prod;
-    prod.hist = hist; // patterns don't typically have histories in this code base, could be changed but currently not so
-
-    for (int row = 0; row < 6; ++row)
-    {
-        for (int k = 0; k < 6; ++k)
-        {
-            const Z2& left_element = *this[k][row];
-            if (left_element.intPart == 0) continue;
-
-            Z2 smallerLDE = left_element;
-            smallerLDE.exponent--; //decrease lde
-
-            for (int col = 0; col < 6; col++)
-            {
-                if(other.get(k,col).first) prod.get_element(row,col) += left_element;
-                if(other.get(k,col).second) prod.get_element(row,col) += smallerLDE;
-            }
-        }
-    }
-    return prod;
-}
-
-SO6 SO6::left_multiply_by_T(const int &i) const
+SO6 SO6::left_multiply_by_T(const int i) const
 {
     SO6 prod = *this;
     switch (i) {
@@ -205,9 +100,8 @@ SO6 SO6::left_multiply_by_T(const int &i) const
         case 12: return left_multiply_by_T<12>(prod);
         case 13: return left_multiply_by_T<13>(prod);
         case 14: return left_multiply_by_T<14>(prod);
+        default: throw std::invalid_argument("Invalid value for i");
     }
-    // Handle invalid input case
-    throw std::invalid_argument("Invalid value for i");
 }
 
 /// @brief left multiply this by a circuit
@@ -236,23 +130,6 @@ void SO6::update_history(const unsigned char &p) {
         hist.back() |= (p << 4);
     }
 }
-
-// Function to check consistency between two maps
-bool is_consistent_column(const std::map<Z2, int>& mapA, const std::map<Z2, int>& mapB) {
-    for (const auto& [key, valueA] : mapA) {
-        auto it = mapB.find(key);
-        if (it == mapB.end()) {
-            // Key from mapA does not exist in mapB
-            return false;
-        }
-        if (it->second < valueA) {
-            // Frequency in mapB is less than in mapA
-            return false;
-        }
-    }
-    return true;
-}
-
 /**
  * @brief Transforms the current object into its canonical form.
  *
@@ -337,30 +214,6 @@ bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm
 }
 
 /**
- * @brief Sorts the physical array to match the lexicographical order.
- *
- * This function sorts the physical array `arr` such that it matches the
- * lexicographical order defined by the `Row` and `Col` arrays.
- */
-void SO6::sort_physical_array() {
-    Z2 temp[36];
-    std::map<Z2,int> temp_rf[6];
-    for(size_t row = 0; row<6; ++row) {
-        for(size_t col = 0; col<6; ++col) {
-            temp[(col<<2) + (col<<1) + row] = arr[(Col[col]<<2) + (Col[col] <<1) + Row[row]];
-        }
-        temp_rf[row] = row_frequency[Row[row]];
-    }
-    for(int row =0; row <6 ; ++row) {
-        Row[row] = row;
-        Col[row] = row;
-    }
-
-    std::copy(std::begin(temp), std::end(temp), std::begin(arr));
-    std::copy(std::begin(temp_rf), std::end(temp_rf), std::begin(row_frequency));
-}
-
-/**
  * @brief Computes the row equivalence classes for the SO6 object.
  *
  * This function iterates through the rows of the SO6 object and groups them
@@ -380,21 +233,6 @@ std::map<std::map<Z2, int>, std::vector<int>> SO6::row_equivalence_classes() {
     for (int row = 0; row < 6; ++row) {
         std::map<Z2, int> &key = row_frequency[row];
         ret[key].push_back(row);
-    }
-    return ret;
-}
-
-// Return negative values to make life easier later
-std::map<std::map<Z2, int>, int> SO6::entry_frequency_in_cols(std::vector<int>& cols) {
-    std::map<std::map<Z2, int>, int> ret;
-
-    // Go in order to maintain sort
-    for (int row = 0; row < 6; ++row) {
-        std::map<Z2, int> next_row;
-        for(int col : cols) {
-            next_row[get_element(row, col).abs()]--;
-        }
-        ret[next_row]++;
     }
     return ret;
 }
@@ -443,15 +281,6 @@ bool SO6::get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int
     return more_permutations;
 }
 
-// bool SO6::get_next_ec_permutation(std::vector<int>& ec) {
-//     return std::next_permutation(ec.begin(), ec.end());
-// }
-
-std::string SO6::name() const
-{
-    return std::string(hist.begin(),hist.end());
-}
-
 
 SO6 SO6::reconstruct(const std::string& name) {
     SO6 ret = SO6::identity();
@@ -460,17 +289,6 @@ SO6 SO6::reconstruct(const std::string& name) {
         if(i>15) ret = ret.left_multiply_by_T((i>>4)-1);
     }
     ret.canonical_form();
-    return ret;
-}
-
-std::string SO6::name_as_num(const std::string name) {
-    std::string ret;
-    for(unsigned char i : name)
-    {
-        ret.append(std::to_string((uint) ((i & 15) -1)) + " ");
-        if(i>15) ret.append(std::to_string((uint)((i>>4)-1)) + " ");
-    }
-    ret.pop_back();
     return ret;
 }
 
@@ -639,112 +457,6 @@ void SO6::unpermuted_print(const uint8_t Row_[6], const uint8_t Col_[6]) const {
 
 void SO6::unpermuted_print() const {
     unpermuted_print(this->Row, this->Col);
-}
-
-void SO6::unpermuted_print(const uint8_t Row_[6], const uint8_t Col_[6], const std::vector<int>& pivotRows, const std::vector<int>& pivotCols) const {
-    int maxWidth = 0;
-
-    // Lambda to check if a value exists in a vector
-    auto contains = [](const std::vector<int>& vec, int value) {
-        return std::find(vec.begin(), vec.end(), value) != vec.end();
-    };
-
-    // Determine max width of elements without color codes
-    for (int row = 0; row < 6; ++row) {
-        for (int col = 0; col < 6; ++col) {
-            std::stringstream ss;
-            ss << arr[get_index(Row_[row], Col_[col])];
-            maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-        }
-    }
-
-    // Determine max width for column headers
-    for (int col = 0; col < 6; ++col) {
-        std::stringstream ss;
-        ss << "Col[" << col << "] =" << Col_[col];
-        maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-    }
-
-    const int width = maxWidth + 2;  // Add padding for consistency
-
-    std::stringstream precomputed_output;
-
-    // Print column headers
-    precomputed_output << "\n" << boost::format("%-" + std::to_string(width) + "s") % ""; // Spacing for row labels
-    for (int col = 0; col < 6; ++col) {
-        std::string header = "Col[" + std::to_string(col) + "] =" + std::to_string(Col_[col]);
-        if (contains(pivotCols, col)) {
-            header = MAGENTA + header + RESET; // Add color if it's a pivot column
-        } else {
-            header = YELLOW + header + RESET; // Regular column color
-        }
-        precomputed_output << boost::format("%-" + std::to_string(width) + "s") % header;
-    }
-    precomputed_output << "\n";
-
-    // Print matrix rows and elements
-    for (int row = 0; row < 6; ++row) {
-        std::string rowLabel = "Row " + std::to_string((int) Row_[row]);
-        rowLabel = contains(pivotRows, row) ? MAGENTA + rowLabel + RESET : rowLabel;
-
-        // Row label and border style
-        precomputed_output << boost::format("%-" + std::to_string(width) + "s") % rowLabel;
-        std::string leftBorder = (row == 0) ? "⌈ " : ((row == 5) ? "⌊ " : "| ");
-        std::string rightBorder = (row == 0) ? " ⌉" : ((row == 5) ? " ⌋" : " |");
-        precomputed_output << leftBorder;
-
-        // Format each element in the row
-        for (int col = 0; col < 6; ++col) {
-            std::stringstream ss;
-            ss << get_element(Row_[row], Col_[col]);
-            std::string elementStr = ss.str();
-            
-            // Add color coding based on sign and pivot status without affecting width
-            if (contains(pivotRows, row) && contains(pivotCols, col)) {
-                elementStr = MAGENTA + elementStr + RESET;
-            } else if (elementStr[0] == '-') { // Negative elements
-                elementStr = RED + elementStr + RESET;
-            } else if (elementStr[0] != '0') { // Positive elements
-                elementStr = GREEN + elementStr + RESET;
-            }
-            precomputed_output << boost::format("%-" + std::to_string(width) + "s") % elementStr;
-        }
-
-        // Print right border
-        precomputed_output << rightBorder << "\n";
-    }
-
-    // Output everything after precomputing
-    std::cout << precomputed_output.str();
-}
-
-void SO6::physical_print() const {
-    int maxWidth = 0;
-
-    // Find the maximum width of the elements
-    for (int row = 0; row < 6 ; row++) {
-        for (int col =0 ; col <6 ; col++) {
-            std::stringstream ss;
-            ss << arr[get_index(row,col)];
-            maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-        }
-    }
-
-    const int width = maxWidth + 2; // Adjust the width by adding 2
-
-    std::cout << "\n";
-    for (int row= 0 ; row <6 ; row++) {
-        std::string leftBorder = "Row: " + std::to_string(row) + " ";
-        leftBorder += (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
-        std::string rightBorder = (row == 0) ? "⌉" : ((row == 5) ? "⌋" : "|");
-
-        std::cout << leftBorder << "\t";
-        for (int col = 0; col < 6 ; col++) {
-            std::cout << std::setw(width) << arr[get_index(row,col)];
-        }
-        std::cout << "\t" << rightBorder << "\n";
-    }
-    std::cout << "\n";
 }
 
 void SO6::print_sign_mask(uint16_t& mask) {

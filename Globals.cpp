@@ -1,7 +1,9 @@
 #include "Globals.hpp"
 #include "utils.hpp"
 #include <thread> 
-#include <boost/program_options.hpp>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/variables_map.hpp>
+#include <boost/program_options/parsers.hpp>
 #include <tbb/concurrent_set.h>
 #include <omp.h>
 
@@ -15,7 +17,6 @@ std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(
 
 // Pattern handling and search settings
 tbb::concurrent_set<pattern> pattern_set;         
-std::vector<pattern> cases;
 std::string pattern_file = "";
 std::string case_file = "";
 std::string root_string ="";

@@ -33,7 +33,7 @@ class SO6{
 
         SO6 left_multiply_by_circuit(std::vector<unsigned char> &);
         SO6 left_multiply_by_T_transpose(const int &);        
-        SO6 left_multiply_by_T(const int &) const;
+        SO6 left_multiply_by_T(const int) const;
 
         const z2_int getLDE() const;
         pattern to_pattern() const;
