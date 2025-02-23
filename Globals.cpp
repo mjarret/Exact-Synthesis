@@ -1,37 +1,30 @@
+#include "uint72_t.hpp"
 #include "Globals.hpp"
-#include "utils.hpp"
+// #include "utils.hpp"
 #include <thread> 
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <tbb/concurrent_set.h>
-#include <omp.h>
 
 namespace po = boost::program_options;
 
 // Threading and performance tracking
 uint8_t THREADS; //store maximum number of threads here
-omp_lock_t omp_lock;
 std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::high_resolution_clock::now(); // Initialize with current time
 std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(); // Initialize as zero
 
-// Pattern handling and search settings
-tbb::concurrent_set<pattern> pattern_set;         
+// Pattern handling and search settings     
 std::string pattern_file = "";
 std::string case_file = "";
 std::string root_string ="";
-SO6 root = SO6::identity();
+// SO6 root = SO6::identity();
 
 // Configuration and state variables
 uint8_t target_T_count = 8;            
 uint8_t stored_depth_max = 255;
 uint8_t num_gen_sets = 1;
 bool cases_flag = false;
-
-// // Counters
-int counter_zero = 0;
-int counter_odd = 0;
-int counter_even = 0;
 
 void Globals::setParameters(int argc, char *argv[]) {
     try {
@@ -56,7 +49,8 @@ void Globals::setParameters(int argc, char *argv[]) {
 
         target_T_count = (uint8_t) (std::max(1,tcount_param));
         stored_depth_max = (uint8_t) stored_depth_param;
-        num_gen_sets = utils::num_generating_sets(target_T_count, stored_depth_max);
+        num_gen_sets = stored_depth_max;
+        // num_gen_sets = utils::num_generating_sets(target_T_count, stored_depth_max);
    
         if (vm.count("help")) {
             std::cout << desc << "\n";
@@ -109,7 +103,6 @@ void Globals::configure()
         // root = SO6::identity();
         std::cout << "[Config] No root specified. Using identity.\n";
     } else {
-        // REIMPLEMENT ME
         // root = SO6::reconstruct_from_circuit_string(root_string);
         std::cout << "[Config] Root specified: " << root_string << "\n";
     }
@@ -119,23 +112,6 @@ void Globals::configure()
     } else {
         std::cout << "[Config] Looking for all cases.\n";
     }
-
-    // if (verbose) {
-    //     std::cout << "[Config] Verbose mode enabled.\n";
-    // }
-
-    // if (transpose_multiply) {
-    //     std::cout << "[Config] Transpose multiply enabled.\n";
-    // }
-
-    // if (explicit_search_mode) {
-    //     std::cout << "[Config] Explicit search mode enabled.\n";
-    // }
-
-    // if (saveResults) {
-    //     std::cout << "[Config] Saving results to file.\n";
-    // }
-    // SO6 case_representative = SO6::reconstruct_from_circuit_string("5 2 0 6 12 1 4 13 12 4 2 9 0");
 }
 
 

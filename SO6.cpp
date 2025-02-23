@@ -1,19 +1,11 @@
 #include <iomanip>  // For std::setw
-#include <sstream>
+#include <fstream>
 #include <boost/format.hpp>
 #include "SO6.hpp"
-#include "pattern.hpp"
 #include "Globals.hpp"
 #include "utils.hpp"
-
-// ANSI color codes
-#define RESET "\033[0m"
-#define RED "\033[31m"
-#define GREEN "\033[32m"
-#define YELLOW "\033[33m"
-#define BLUE "\033[34m"
-#define MAGENTA "\033[35m" // For elements currently under consideration
-
+#include "sort6.hpp"
+#include "./include/Z2.hpp"
 
 // Alias the values of std::strong_ordering for cleaner code
 constexpr auto Equal = std::strong_ordering::equal;
@@ -25,30 +17,10 @@ constexpr auto Equivalent = std::strong_ordering::equivalent;
  * Basic constructor. Initializes Zero matrix.
  *
  */
-SO6::SO6()
+SO6::SO6() : arr{Z2(static_cast<uint32_t>(0))}
 {
-    for(int i = 0; i < 36; i++) {
-        arr[i] = Z2(0,0,0);
-    }
-    int equivalence_class_size = 1;
-
+    for(int i = 1; i < 36; i++) {arr[i] = Z2(static_cast<uint32_t>(0));}
 }
-
-SO6::SO6(pattern &other)
-{
-    for (int col = 0; col < 6; col++) {
-        for (int row = 0; row < 6; row++) {
-            if (other.get(row,col).first == 0 && other.get(row,col).second == 0) {
-                continue;  // Skip this iteration if both `first` and `second` are zero
-            }
-            bool second_arg = other.get(row,col).first == 0 ? other.get(row,col).first : other.get(row,col).second;
-            arr[(col << 2) + (col << 1) + row] = Z2(other.get(row,col).first || other.get(row,col).second, second_arg, other.get(row,col).first);
-        }
-    }
-
-}
-
-// Something much faster than this would be a "multiply by T" method that explicitly does the matrix multiplication given a particular T matrix instead of trying to compute it naively
 
 /**
  * Overloads the * operator with matrix multiplication for SO6 objects
@@ -57,31 +29,25 @@ SO6::SO6(pattern &other)
  */
 SO6 SO6::operator*(const SO6 &other) const
 {
-    // multiplies operators assuming COLUMN,ROW indexing
     SO6 prod;
-
-    // let's see what happens if i turn off history printing
-    prod.hist.reserve(hist.size() + other.hist.size());  // Reserve instead of resize
-    std::copy(other.hist.begin(), other.hist.end(), std::back_inserter(prod.hist));
-    std::copy(hist.begin(), hist.end(), std::back_inserter(prod.hist));
 
     for (int row = 0; row < 6; ++row)
     {
         for (int k = 0; k < 6; ++k)
         {
-            const Z2& left_element = *this[k][row];
-            if (left_element.intPart == 0) continue;
+            const Z2& left_element = get_element(row,k);
+            if (left_element.int_c == 0) continue;
             for (int col = 0; col < 6; ++col)
             {
-                if((other[col][k]).intPart == 0) continue;
-                prod[col][row] += (left_element * other[col][k]);
+                if((other.get_element(k,col)).int_c == 0) continue;
+                prod.get_element(row,col) += (left_element * other.get_element(k,col));
             }
         }
     }
     return prod;
 }
 
-SO6 SO6::left_multiply_by_T(const int i) const
+SO6 SO6::left_multiply_by_T(const uint8_t i) const
 {
     SO6 prod = *this;
     switch (i) {
@@ -104,32 +70,6 @@ SO6 SO6::left_multiply_by_T(const int i) const
     }
 }
 
-/// @brief left multiply this by a circuit
-/// @param circuit circuit listed as a compressed vector of gates
-/// @return the result circuit * this
-SO6 SO6::left_multiply_by_circuit(std::vector<unsigned char> &circuit)
-{
-    SO6 prod = *this;
-    for (unsigned char i : circuit)
-    {
-        prod = prod.left_multiply_by_T((i & 15) -1);
-        if(i>15) {
-            prod = prod.left_multiply_by_T((i>>4)-1);
-        }
-    }
-    return prod;
-}
-
-void SO6::update_history(const unsigned char &p) {
-    // Check if we need to start a new history entry
-    if (hist.empty() || (hist.back() & 0xF0) != 0) {
-        hist.reserve(hist.size() + 1);  // Reserve space for one more element
-        hist.push_back(p);              // Add the new entry
-    } else {
-        // Pack the new entry into the higher 4 bits of the last byte
-        hist.back() |= (p << 4);
-    }
-}
 /**
  * @brief Transforms the current object into its canonical form.
  *
@@ -175,20 +115,22 @@ void SO6::canonical_form() {
         for(uint8_t k = 0; k < 32; ++k) {
             uint16_t sc = utils::POS;
             for(int l = 1; l < 6; ++l) {
-                if ( k & (1 << (l-1))) {
+                if (k & (1 << (l-1))) {
                     sc = utils::set_mask_sign(sc, l, utils::NEG);
                 } else {
                     sc = utils::set_mask_sign(sc, l, utils::POS);
                 }
             }
-    
+
+            auto comparator = [&](int i, int j) {
+                auto left = get_column(i, row_perm);
+                auto right = get_column(j, row_perm);
+                return Less == utils::lex_order(left, right, sc, sc);
+            };
+
             ptr = col_perm;
             for (auto &[key, col_class] : col_ecs) {
-                std::sort(col_class.begin(), col_class.end(), [&](int i, int j) {
-                    auto left = get_column(i, row_perm);
-                    auto right = get_column(j, row_perm);
-                    return Less == utils::lex_order(left, right, sc, sc);
-                });
+                sort6::sorting_network_dispatch(col_class, comparator);
                 ptr = std::copy(col_class.begin(), col_class.end(), ptr);
             }
 
@@ -201,7 +143,7 @@ void SO6::canonical_form() {
     }  while (get_next_equivalence_class(row_ecs));
 }
 
-bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm, const int &sign_perm) {
+bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm, const uint16_t sign_perm) {
     for(int col = 0; col < 6; col++) {
         auto current = get_column(col, Row, Col);
         auto new_col = get_column(col, row_perm, col_perm);
@@ -249,22 +191,6 @@ std::map<std::map<Z2, int>, std::vector<int>> SO6::col_equivalence_classes() {
     return ret;
 }
 
-
-/**
- * @brief Negates all elements in a specified row of a 6x6 matrix.
- *
- * This function iterates through each column of the specified (lex) row
- * and negates the element at that position.
- *
- * @param row Reference to the row index to be negated.
- */
-void SO6::negate_row(int& row) {
-    // std::cout << "Negating row " << row << std::endl;
-    for (int col = 0; col < 6; ++col) {
-        get_element(row,col).negate();
-    }
-}
-
 // This function doesn't work.
 // bool SO6::get_next_equivalence_class(std::vector<std::vector<int>>& row_equivalence_classes) {
 bool SO6::get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int>>& row_equivalence_classes) {
@@ -281,50 +207,11 @@ bool SO6::get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int
     return more_permutations;
 }
 
-
-SO6 SO6::reconstruct(const std::string& name) {
-    SO6 ret = SO6::identity();
-    for(unsigned char i : name) {
-        ret = ret.left_multiply_by_T((i & 15) -1);
-        if(i>15) ret = ret.left_multiply_by_T((i>>4)-1);
-    }
-    ret.canonical_form();
-    return ret;
-}
-
-std::string SO6::circuit_string() {
-    std::string ret;
-    for (unsigned char byte : hist) {
-        int lower = (byte & 15) - 1;  // Lower 4 bits
-        ret.append(std::to_string(lower) + " ");
-
-        // Check for upper 4 bits
-        if (byte > 15) {
-            int upper = (byte >> 4) - 1;  // Upper 4 bits
-            ret.append(std::to_string(upper) + " ");
-        }
-    }
-    ret.pop_back();
-    return ret;
-}
-
-SO6 SO6::reconstruct_from_circuit_string(const std::string& input) {
-    std::istringstream iss(input);
-    int number;
-    SO6 ret = SO6::identity();
-    // Iterate over each integer in the string
-    while (iss >> number) {
-        // Process each number, for example, print it
-        ret = ret.left_multiply_by_T(number);
-    }
-    return ret;
-}
-
 const std::strong_ordering SO6::operator<=>(const SO6 &other) const
 {
+    // I think we can assume they have the same hash value at this point
     for (int col = 0; col < 5; ++col)
     {
-
         auto first_iterator_pair = get_column(col, Row, Col);
         auto other_iterator_pair = other.get_column(col, other.Row, other.Col);
 
@@ -335,30 +222,10 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
     return Equal;
 }
 
-const z2_int SO6::getLDE() const {
+const uint8_t SO6::getLDE() const {
     return std::max_element(arr, arr + 36, [](const Z2& a, const Z2& b) {
-        return a.exponent < b.exponent;
-    })->exponent;
-}
-
-pattern SO6::to_pattern() const
-{
-    pattern ret = pattern();
-    ret.hist.reserve(hist.size());
-    ret.hist = hist;
-
-    const int8_t lde = getLDE();
-    for(int col = 0; col < 6; ++col) for(int row = 0; row < 6; ++row)
-    {
-        const auto z = get_element(row,col);
-        if (z.exponent < lde - 1 || z.intPart == 0) continue;
-        if (z.exponent == lde) { 
-            ret.set(row, col, {1, z.sqrt2Part & 1});
-            continue;
-        }
-        ret.set(row,col,{0,1});
-    }
-    return ret;
+        return a.denom_exp < b.denom_exp;
+    })->denom_exp;
 }
 
 /**
@@ -374,7 +241,7 @@ std::ostream &operator<<(std::ostream &os, const SO6 &m) {
     for (int row = 0; row < 6; row++) {
         for (int col = 0; col < 6; col++) {
             std::stringstream ss;
-            ss << m[col][row];
+            ss << m.get_element(row,col);
             maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
         }
     }
@@ -388,7 +255,7 @@ std::ostream &operator<<(std::ostream &os, const SO6 &m) {
 
         os << leftBorder << "  ";
         for (int col = 0; col < 6; col++) {
-            os << std::setw(width) << m[col][row];
+            os << std::setw(width) << m.get_element(row,col);
         }
         os << "\t" << rightBorder << "\n";
     }
@@ -458,56 +325,3 @@ void SO6::unpermuted_print(const uint8_t Row_[6], const uint8_t Col_[6]) const {
 void SO6::unpermuted_print() const {
     unpermuted_print(this->Row, this->Col);
 }
-
-void SO6::print_sign_mask(uint16_t& mask) {
-    for(int i=0; i<6; ++i) {
-        uint8_t tmp = mask_of_column(i);
-            
-        if( tmp == utils::NEG) std::cout << "-";
-        else if( tmp == utils::POS) std::cout << "+";
-        else if( tmp == utils::DISAGREE) std::cout << "\u00BF";
-        else if( tmp == utils::AGREE) std::cout << "?";
-    }
-}
-
-inline uint8_t SO6::mask_of_column(const int& c) {
-    return (col_mask >> (2*c)) & utils::DISAGREE;
-}
-
-inline uint16_t SO6::set_mask_sign(const int& index, const uint8_t& sign) {
-    return (col_mask & ~(utils::DISAGREE << (2*index))) | (sign << (2*index));
-}
-
-
-void SO6::unpermuted_print(const std::bitset<6>& columns_to_print) const {
-    int maxWidth = 0;
-
-    // Find the maximum width of the elements in the specified columns
-    for (int row : Row) {
-        for (int col : Col) {
-            if (columns_to_print.test(col)) {
-                std::stringstream ss;
-                ss << arr[get_index(row, col)];
-                maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-            }
-        }
-    }
-
-    const int width = maxWidth + 2; // Adjust the width by adding 2
-
-    std::cout << "\n";
-    for (int row : Row) {
-        std::string leftBorder = (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
-        std::string rightBorder = (row == 0) ? "⌉" : ((row == 5) ? "⌋" : "|");
-
-        std::cout << leftBorder << "\t";
-        for (int col = 0; col < 6; ++col) {
-            if (columns_to_print.test(col)) {
-                std::cout << std::setw(width) << arr[get_index(row, col)];
-            }
-        }
-        std::cout << "\t" << rightBorder << "\n";
-    }
-    std::cout << "\n";
-}
-

@@ -1,106 +1,101 @@
 #ifndef SO6_HPP
 #define SO6_HPP
 
-#include <vector>
 #include <map>
-#include <optional>
-#include <bitset>
-#include "Z2.hpp"
-#include "pattern.hpp"
+#include <cstdint>
+#include "include/PermutationCoder.hpp"
+#include "./Z2.hpp"
 
-class pattern;
+// Use FNV-1a offset basis for the overall hash.
+constexpr std::size_t offset = sizeof(std::size_t) == 8
+                                ? 1469598103934665603ULL
+                                : 2166136261U;
+constexpr std::size_t prime = sizeof(std::size_t) == 8
+                                ? 1099511628211ULL
+                                : 16777619U;
 
-class SO6{
+class SO6 {
     public:
         SO6();
-        SO6(Z2[6][6]); //initializes matrix according to a 6x6 array of Z2
-        SO6(pattern &); //initializes matrix according to a pattern
+        int get_index(const uint8_t row, const uint8_t col) const {return (col<<2) + (col<<1) + row;}
+        inline Z2& get_element(const uint8_t row, const uint8_t col) {return arr[get_index(row,col)];}  // Return the array element needed.
+        inline const Z2 get_element(const uint8_t row, const uint8_t col) const {return arr[get_index(row,col)];}  // Return the array element needed.
 
-        inline int get_index(const int &row, const int &col) const {return (col<<2) + (col<<1) + row;}
-        Z2* operator[](const int &col) {return arr + get_index(0,col);}  // Return the array element needed.
-        inline Z2& get_element(const int &row, const int &col) {return arr[get_index(row,col)];}  // Return the array element needed.
-        inline const Z2 get_element(const int &row, const int &col) const {return arr[get_index(row,col)];}  // Return the array element needed.
-        Z2& get_lex_element(const int &row, const int &col) {return arr[get_index(Row[row],Col[col])];}  // Return the array element needed.
-        const Z2 get_lex_element(const int &row, const int &col) const {return arr[get_index(Row[row],Col[col])];}  // Return the array element needed.
-        const Z2* operator[](const int &col) const {return arr + get_index(0,col);}  // Return the array element needed. 
+        const std::strong_ordering operator<=>(const SO6& other) const;
+        const bool operator==(const SO6& other) const {return ((*this) <=> other) == std::strong_ordering::equal;}
+        friend std::ostream& operator<<(std::ostream&,const SO6&); 
 
-        SO6 operator*(const SO6&) const; //multiplication
-        SO6 operator*(const pattern &) const;
+        static SO6 lookup(const SO6& other) {return SO6::identity();};
 
-        const std::strong_ordering operator<=>(const SO6 &) const;
-        
-        friend std::ostream& operator<<(std::ostream&,const SO6&); //display
+        inline std::string circuit_string() {
+            if (last_T == 0xF) return "F";  // Identity case
+            return SO6::lookup((*this).left_multiply_by_T(last_T)).circuit_string() + std::to_string(last_T);
+        }
 
-        SO6 left_multiply_by_circuit(std::vector<unsigned char> &);
-        SO6 left_multiply_by_T_transpose(const int &);        
-        SO6 left_multiply_by_T(const int) const;
+        static SO6 reconstruct_from_circuit_string(const std::string& input) {
+            SO6 ret = SO6::identity();
 
-        const z2_int getLDE() const;
-        pattern to_pattern() const;
-        SO6 transpose();
-        std::string name() const; 
-        
-        std::string circuit_string();
-        static SO6 reconstruct_from_circuit_string(const std::string& );        
-        
+            // Handle empty input case
+            if (input.empty() || input == "F") return ret;
+
+            // Read from last to first (since circuit_string() is built backwards)
+            for (auto it = input.rbegin(); it != input.rend(); ++it) {
+                ret = ret.left_multiply_by_T(static_cast<unsigned char>(*it));
+            }
+
+            return ret;
+        }
+
+        const uint8_t getLDE() const;
+                
         void unpermuted_print() const;
-        void unpermuted_print(const std::bitset<6> &) const;
         void unpermuted_print(const uint8_t[6], const uint8_t[6]) const;
         void unpermuted_print(const uint8_t[6], const uint8_t[6], const std::vector<int>&, const std::vector<int>&) const;
-
-        int get_pivot_column(std::bitset<6>&, std::unordered_map<std::bitset<6>,int>&);
-        
-        static SO6 reconstruct(const std::string &);
-        static std::string name_as_num(const std::string);
-        
-        std::strong_ordering lex_order(const int &, const int &, const int &) const;
-        
-        template <bool first_is_negative, bool second_is_negative> static bool lex_comparator(const Z2 &, const Z2 &);
-
-        static const SO6 identity() {
-            SO6 I;
-            for(int k =0; k<6; k++) {
-            I.arr[(k<<2) + (k<<1) + k] = 1;
-                I.row_frequency[k][Z2(1,0,0)] = 1;
-                I.row_frequency[k][Z2(0,0,0)] = 5;
-                I.col_frequency[k][Z2(1,0,0)] = 1;
-                I.col_frequency[k][Z2(0,0,0)] = 5;
+                 
+        static const SO6& identity() {
+            static const SO6 I = []() {
+            SO6 temp;
+            for(int k = 0; k < 6; k++) {
+                temp.arr[(k << 2) + (k << 1) + k] = Z2(1, 0, 0);
+                temp.row_frequency[k][Z2(1, 0, 0)] = 1;
+                temp.row_frequency[k][Z2(0, 0, 0)] = 5;
+                temp.col_frequency[k][Z2(1, 0, 0)] = 1;
+                temp.col_frequency[k][Z2(0, 0, 0)] = 5;
             }
+            temp.canonical_form();
+            temp.hash = SO6_hash(temp);
+            return temp;
+            }();
             return I;
         }
 
-        // std::vector<std::vector<int>> get_equivalence_classes() const;
-        std::map<std::map<Z2, int>, std::vector<int>> row_equivalence_classes() ;
-        
-        // std::vector<std::vector<int>> get_equivalence_classes(const std::map<Z2,int> *) const;
-        // std::vector<std::vector<int>> col_equivalence_classes() const;
-        std::map<std::map<Z2, int>, std::vector<int>> col_equivalence_classes() ;
-        // bool get_next_equivalence_class(std::vector<std::vector<int>>&);
+        std::map<std::map<Z2, int>, std::vector<int>> row_equivalence_classes();
+        std::map<std::map<Z2, int>, std::vector<int>> col_equivalence_classes();
         bool get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int>>& );
-        void negate_row(int &);
-        bool submatrix_lex_less(std::vector<int> &, std::vector<int> &, int);
 
+        SO6 operator*(const SO6&) const; 
+        SO6 left_multiply_by_T(const uint8_t) const;
+        
         template<int i> requires(i >= 0 && i < 15) 
         static SO6 left_multiply_by_T(SO6 &S) {
             int row1, row2;
-            unsigned char p;
 
             switch (i) {
-                case 0: row1 = 0; row2 = 1; p = 1; break;
-                case 1: row1 = 0; row2 = 2; p = 2; break;
-                case 2: row1 = 0; row2 = 3; p = 3; break;
-                case 3: row1 = 0; row2 = 4; p = 4; break;
-                case 4: row1 = 0; row2 = 5; p = 5; break;
-                case 5: row1 = 1; row2 = 2; p = 6; break;
-                case 6: row1 = 1; row2 = 3; p = 7; break;
-                case 7: row1 = 1; row2 = 4; p = 8; break;
-                case 8: row1 = 1; row2 = 5; p = 9; break;
-                case 9: row1 = 2; row2 = 3; p = 10; break;
-                case 10: row1 = 2; row2 = 4; p = 11; break;
-                case 11: row1 = 2; row2 = 5; p = 12; break;
-                case 12: row1 = 3; row2 = 4; p = 13; break;
-                case 13: row1 = 3; row2 = 5; p = 14; break;
-                case 14: row1 = 4; row2 = 5; p = 15; break;
+                case 0: row1 = 0; row2 = 1; break;
+                case 1: row1 = 0; row2 = 2; break;
+                case 2: row1 = 0; row2 = 3; break;
+                case 3: row1 = 0; row2 = 4; break;
+                case 4: row1 = 0; row2 = 5; break;
+                case 5: row1 = 1; row2 = 2; break;
+                case 6: row1 = 1; row2 = 3; break;
+                case 7: row1 = 1; row2 = 4; break;
+                case 8: row1 = 1; row2 = 5; break;
+                case 9: row1 = 2; row2 = 3; break;
+                case 10: row1 = 2; row2 = 4; break;
+                case 11: row1 = 2; row2 = 5; break;
+                case 12: row1 = 3; row2 = 4; break;
+                case 13: row1 = 3; row2 = 5; break;
+                case 14: row1 = 4; row2 = 5; break;
             }
             // Define a lambda function for frequency map decrement
             auto decrementFrequency = [](auto& freq_map, Z2 key) {
@@ -117,8 +112,8 @@ class SO6{
             {
                 const Z2 row1_element = S.get_element(row1, col);
                 const Z2 row2_element = S.get_element(row2, col);
-                Z2 row1_element_abs = row1_element.abs();
-                Z2 row2_element_abs = row2_element.abs();
+                Z2 row1_element_abs = std::abs(row1_element);
+                Z2 row2_element_abs = std::abs(row2_element);
 
                 // To track the column sum, begin by decreasing the size by the elements that will be modified
                 decrementFrequency(S.row_frequency[row1], row1_element_abs);
@@ -129,9 +124,12 @@ class SO6{
                 // Update elements
                 S.get_element(row1, col) += row2_element;
                 S.get_element(row2, col) -= row1_element;
-                row1_element_abs = (S.get_element(row1, col).increaseDE()).abs();
-                row2_element_abs = (S.get_element(row2, col).increaseDE()).abs();
-
+                S.get_element(row1, col).denom_exp += (S.get_element(row1, col).int_c!=0);
+                S.get_element(row2, col).denom_exp += (S.get_element(row2, col).int_c!=0);
+                
+                row1_element_abs = std::abs(S.get_element(row1, col));
+                row2_element_abs = std::abs(S.get_element(row2, col));
+                
                 // Update frequencies
                 S.row_frequency[row1][row1_element_abs]++;
                 S.row_frequency[row2][row2_element_abs]++;
@@ -140,12 +138,10 @@ class SO6{
             }
 
             S.canonical_form();
-            S.update_history(p);
+            S.hash = SO6_hash(S);
+            S.last_T = i;
             return S;
         }
-   
-        void physical_print() const;
-        std::vector<std::vector<int>> ecs;
 
         // Custom iterator class
         class Iterator {
@@ -209,70 +205,108 @@ class SO6{
                 const uint8_t *Row_;
                 const uint8_t *Col_;
                 const uint8_t identity[6] = {0,1,2,3,4,5};
-            };
+        };
 
-            // Begin iterator: Start from the first element
-            Iterator begin() const {
-                return Iterator(*this, 0);
-            }
+        Iterator begin() const {return Iterator(*this, 0);}
+        Iterator begin(uint8_t* Row) const {return Iterator(*this, 0, Row, Col);}
+        Iterator end() const {return Iterator(*this, 36);}       
+        Iterator end(uint8_t *Row) const {return Iterator(*this, 0, Row, Col) +6;}       
 
-            // Begin iterator: Start from the first element
-            Iterator begin(uint8_t* Row) const {
-                return Iterator(*this, 0, Row, Col);
-            }
+        Z2 arr[36];
+        bool is_better_permutation(const uint8_t*, const uint8_t*,const uint16_t curr_sc);
 
-            // End iterator: After the last element
-            Iterator end() const {
-                return Iterator(*this, 36);  // End after 36 elements (6x6 matrix)
-            }       
-            // End iterator: After the last element
-            Iterator end(uint8_t *Row) const {
-                return Iterator(*this, 0, Row, Col) +6;  // End after 6 elements (6x6 matrix)
-            }       
+        std::pair<SO6::Iterator,SO6::Iterator> get_column(const uint8_t  col, const uint8_t* Row_ = nullptr, const uint8_t* Col_ = nullptr) const {
+            return std::pair<SO6::Iterator,SO6::Iterator>(Iterator(*this, (col << 2) + (col << 1), Row_, Col_), Iterator(*this, (col << 2) + (col << 1) + 6, Row_, Col_));
+        }
+        std::pair<SO6::Iterator,SO6::Iterator> get_lex_column(const uint8_t  col) const {return get_column(col, Row, Col);}
 
-            Z2 arr[36];
-            bool is_better_permutation(const uint8_t*, const uint8_t*,const int & curr_sc);
-
-            std::pair<SO6::Iterator,SO6::Iterator> get_column(const int & col, const uint8_t* Row_ = nullptr, const uint8_t* Col_ = nullptr) const {
-                return std::pair<SO6::Iterator,SO6::Iterator>(Iterator(*this, (col << 2) + (col << 1), Row_, Col_), Iterator(*this, (col << 2) + (col << 1) + 6, Row_, Col_));
-            }
-
-            std::pair<SO6::Iterator,SO6::Iterator> get_lex_column(const int & col) const {
-                return get_column(col, Row, Col);
-            }
-
-
-
-        std::vector<unsigned char> hist; 
-        
-        void canonical_form();
-        void canonical_form_redux();
         uint8_t Col[6] = {0,1,2,3,4,5};
         uint8_t Row[6] = {0,1,2,3,4,5};
 
-        std::optional<Z2> findFirstIntersection(const std::map<Z2, int>& map1, const std::map<Z2,int>& map2);
-        std::map<Z2, int> map_intersection(const std::map<Z2, int>& map1, const int, const std::map<Z2, int>& map2, const int);
-        std::map<std::map<Z2, int>, int> entry_frequency_in_cols(std::vector<int>& cols);
-        
-        template <typename T>
-        bool isCompatible(const std::map<T, int>& vec, const std::map<T, int>& freqMap);
+        uint8_t getCol(int i) {return PermutationCoder::decode(col_perm, i);}
+        uint8_t getRow(int i) {return PermutationCoder::decode(row_perm, i);}
 
-        void print_sign_mask(uint16_t& mask);
-        inline uint8_t mask_of_column(const int& c);
-        inline uint16_t set_mask_sign(const int& c, const uint8_t& sign);
-        uint16_t sign_convention = 21845;
+        unsigned char last_T : 4 = 0xF;
+        uint16_t sign_convention = 21845;        
+
+        size_t get_hash() const {return hash;}
+
+        static uint8_t mask_at_index(const uint16_t& mask, const int& index) {
+            return (mask >> (2*index)) & 0b11;
+         }
+    
+    size_t hash = 0;
 
     private:
+        void canonical_form();
         std::map<Z2,int> row_frequency[6];
         std::map<Z2,int> col_frequency[6];        
-        
-        uint16_t row_mask;
-        uint16_t col_mask;
+        uint16_t col_perm = PermutationCoder::encode(0,1,2,3,4,5);
+        uint16_t row_perm = PermutationCoder::encode(0,1,2,3,4,5);
 
-        void sort_physical_array();
-        void update_history(const unsigned char &); 
+   // A fast column hash that is consistent with the lexicographic comparison:
+    // - It examines the 6 elements (each 24 bits) in order.
+    // - It determines a global “flip” flag based on the first nonzero element:
+    //   if (first_nonzero.intPart < 0) then flip = true (if not already).
+    // - Then it computes a hash by processing each element’s canonical value,
+    //   where canonical = (flip ? -element.intPart : element.intPart) masked to 24 bits.
+    // - The FNV‑1a–style mixing is done byte‐by‐byte so that all 24 bits are used.
+    template <typename Iterator>
+    static inline std::size_t column_hash(Iterator begin, Iterator end, uint16_t sign_mask = 0) {
+        std::size_t hash = offset;
 
-        // uint16_t sign_convention = 21845;
+        int i = 0;
+        auto it = begin;
+        for (; it != end; ++it, ++i) {
+            if ((*it).int_c == 0) continue;
+            sign_mask = (((*it).int_c < 0)^(mask_at_index(sign_mask,i)==0b10) ) ? sign_mask^0xFFFF : sign_mask;
+            break;
+        }
+
+        // Process each element in the range.
+        for (; it != end; ++it, ++i) {
+            Z2 canonical = ((mask_at_index(sign_mask, i) == 0b10) && ((*it).int_c != 0)) ? (-(*it)) : (*it);
+            std::size_t combined = (static_cast<std::size_t>(canonical.int_c) * prime) +
+                                (static_cast<std::size_t>(canonical.sqrt2_c) * (prime >> 1)) +
+                                (static_cast<std::size_t>(canonical.denom_exp) * (prime >> 2));
+            hash = (hash * prime) ^ combined;
+        }
+        return hash;
+    }
+
+    // Now, in your SO6 class, you can define a member function that combines the
+    // column hashes (assuming arr is stored in column-major order: each column occupies 6 consecutive elements).
+    static inline std::size_t SO6_hash(const SO6 s) {
+        std::size_t hash = offset;
+
+        // There are 6 columns in an SO6.
+        for (int col=0; col < 5; col++) {
+            // Since get_index returns (col*6 + row), the columns are contiguous.
+            auto column = s.get_column(col, s.Row, s.Col);
+
+            // Compute the hash for this column.
+            std::size_t col_hash = column_hash(column.first, column.second, s.sign_convention);
+            
+            // Combine into the overall hash.
+            hash = (hash * prime) ^ col_hash;
+        }
+        return hash;
+    };
+
 };
+
+static constexpr uint16_t col_mask = 0x3F;
+
+namespace std {
+    template <>
+    struct hash<SO6> {
+        std::size_t operator()(const SO6& so6) const {
+            return so6.get_hash();
+        }
+    };
+
+ 
+}
+
 
 #endif

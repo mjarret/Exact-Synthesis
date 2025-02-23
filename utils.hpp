@@ -1,19 +1,17 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <iostream>
 #include <sstream>
-#include <tbb/concurrent_set.h>
+#include <tbb/concurrent_unordered_set.h>
 #include "Z2.hpp"
 #include "SO6.hpp"
-#include "utils.hpp"
 
 /**
  * @file utils.hpp
  * @brief Utility functions for set operations and conversions.
  */
-class utils {
-public:
-
+struct utils {
     static constexpr uint16_t NEG = 0b10;
     static constexpr uint16_t POS = 0b01;
     static constexpr uint16_t DISAGREE = 0b11;
@@ -26,17 +24,6 @@ public:
     static constexpr auto Less = std::strong_ordering::less;
     static constexpr auto Greater = std::strong_ordering::greater;
     static constexpr auto Equivalent = std::strong_ordering::equivalent;
-
-    static void print_sign_mask(const uint16_t& mask) {
-        for(int i=0; i<6; ++i) {
-            uint16_t tmp = mask_at_index(mask, i);
-            
-            if( tmp == NEG) std::cout << "-";
-            else if( tmp == POS) std::cout << "+";
-            else if( tmp == DISAGREE) std::cout << "\u00BF";
-            else if( tmp == AGREE) std::cout << "?";
-        }
-    }
 
     inline static uint8_t mask_at_index(const uint16_t& mask, const int& index) {
         return (mask >> (2*index)) & BITS;
@@ -59,61 +46,20 @@ public:
     }
 
     /**
-     * @brief Converts a set of SO6s to a shuffled vector and clears the set.
-     * @param s Set of SO6 to be converted.
-     * @return A shuffled vector containing the elements originally in the set.
-     */
-    static std::vector<SO6> convert_to_vector_and_clear(tbb::concurrent_set<SO6>& s) {
-        std::vector<SO6> v;
-        v.reserve(s.size()); // Reserve space to avoid reallocations
-        
-        // Explicitly move elements from the set into the vector
-        for (auto it = s.begin(); it != s.end(); ++it) {
-            v.push_back(std::move(*it));
-        }
-        
-        s.clear(); // Clear the set after moving elements
-        
-        // Shuffle the vector
-        if (!v.empty()) {
-            static thread_local std::mt19937 g(std::random_device{}());
-            std::shuffle(v.begin(), v.end(), g);
-        }
-        
-        return v; // Return the shuffled vector
-    }
-
-    static std::string convert_csv_line_to_binary(const std::string& line) {
-        std::stringstream ss(line);
-        std::string item;
-        std::string binaryString;
-
-        while (std::getline(ss, item, ',')) {
-            int number = std::stoi(item);
-            binaryString += std::bitset<2>(number).to_string();
-        }
-        if(binaryString.length() !=72) {
-            std::cout << "shit.";
-            std::exit(0);
-        }
-        return binaryString;
-    }
-
-    /**
      * @brief Performs the set difference operation (A \ B).
      * Erases elements from set A that are also in set B.
      * @param A Set from which elements will be erased.
      * @param B Set containing elements to be removed from A.
      */
     // template<typename T>
-    // static void setDifference(tbb::concurrent_set<T>& A, const tbb::concurrent_set<T>& B) {
+    // static void setDifference(tbb::concurrent_unordered_set<T>& A, const tbb::concurrent_unordered_set<T>& B) {
     //     for (auto it = B.begin(); it != B.end(); ++it) {
     //         A.unsafe_erase(*it);
     //     }
     // }
     template<typename T>
-    static void setDifference(tbb::concurrent_set<T>& A, const tbb::concurrent_set<T>& B) {
-        tbb::concurrent_set<T> result;
+    static void setDifference(tbb::concurrent_unordered_set<T>& A, const tbb::concurrent_unordered_set<T>& B) {
+        tbb::concurrent_unordered_set<T> result;
         for (const auto& elem : A) {
             if (B.find(elem) == B.end()) {
                 result.insert(elem);
@@ -128,8 +74,8 @@ public:
      * @param current Set to be moved to prior.
      * @param next Set to be moved to current.
      */
-    static void rotate_and_clear(tbb::concurrent_set<SO6>& prior, tbb::concurrent_set<SO6>& current, tbb::concurrent_set<SO6>& next) {
-        tbb::concurrent_set<SO6>().swap(prior); // Clear prior
+    static void rotate_and_clear(tbb::concurrent_unordered_set<SO6>& prior, tbb::concurrent_unordered_set<SO6>& current, tbb::concurrent_unordered_set<SO6>& next) {
+        tbb::concurrent_unordered_set<SO6>().swap(prior); // Clear prior
         prior.swap(current); // Move current to prior
         current.swap(next); // Move next to current
     }
@@ -187,15 +133,15 @@ public:
     template <typename Iterator>
     static std::strong_ordering lex_order(Iterator &first_it, Iterator &first_end, Iterator &second_it, Iterator &second_end, uint16_t first_sign_mask = 0, uint16_t second_sign_mask = 0) {
         // Find the first non-zero element in both ranges and determine sign
-
+        
         int i = 0;
 
         std::strong_ordering comp1 = Equal;
         std::strong_ordering comp2 = Equal;
 
         for (; first_it != first_end && second_it != second_end; ++first_it, ++second_it, ++i) {
-            comp1 = (*first_it).intPart <=> 0;
-            comp2 = (*second_it).intPart <=> 0;
+            comp1 = (*first_it).int_c <=> 0;
+            comp2 = (*second_it).int_c <=> 0;
             if (comp1 == Equal && comp2 == Equal) continue;
             if (comp1 == Equal) return Greater;
             if (comp2 == Equal) return Less;
@@ -205,7 +151,6 @@ public:
 
             if((comp1 == Less)^(fsm==NEG)) first_sign_mask ^= 0xFFFF;
             if((comp2 == Less)^(ssm==NEG)) second_sign_mask ^= 0xFFFF;
-                
             break;
         }
 
@@ -221,17 +166,13 @@ public:
             comparison = (second_is_neg ? -*second_it : *second_it) <=> (first_is_neg ? -*first_it : *first_it);
         
             if (comparison == Equal) continue;
-            if ((*first_it).intPart == 0) return Greater;
-            if ((*second_it).intPart == 0) return Less;
+            if ((*first_it).int_c == 0) return Greater;
+            if ((*second_it).int_c == 0) return Less;
 
             return comparison;
         }
         
         return Equal;  // All elements are equal
-    }
-
-    static void reverse_sign_mask(uint16_t& mask) {
-        mask = ~mask;
     }
 
     static std::strong_ordering lex_order(std::pair<SO6::Iterator,SO6::Iterator>& first, std::pair<SO6::Iterator,SO6::Iterator>& second, const uint16_t& first_sign = 0, const uint16_t& second_sign = 0) {
@@ -269,11 +210,11 @@ public:
                 for (int c = 0; c < 6; ++c) {
                     uint8_t curr_col_mask = mask_at_index(col_mask, c);
                     if (curr_col_mask == AGREE || curr_col_mask == DISAGREE) {
-                        int intPart = s.get_element(Row[r], c).intPart;
+                        int int_c = s.get_element(Row[r], c).int_c;
 
-                        if(intPart == 0) continue;
-                        else if(intPart < 0) set_mask_sign(col_mask, c, ~curr_row_mask);    // This can produce a col_mask of DISAGREE 
-                        else if(intPart > 0) set_mask_sign(col_mask, c, curr_row_mask);
+                        if(int_c == 0) continue;
+                        else if(int_c < 0) set_mask_sign(col_mask, c, ~curr_row_mask);    // This can produce a col_mask of DISAGREE 
+                        else if(int_c > 0) set_mask_sign(col_mask, c, curr_row_mask);
                     }
                 }
             }
@@ -303,7 +244,6 @@ public:
      *         - DISAGREE: Indicates a negative majority vote.
      */
     static uint16_t majority_vote (const SO6& s, const uint8_t& row, const uint16_t& col_mask, std::map<std::map<Z2, int>, std::vector<int>>& col_eq_c) {
-        // Z2 row_total = Z2(0,0,0);    
         int row_total = 0;      
         // Needs to depend upon the row mask of the previous row. Try both options, because it won't matter which option we go with ultimately.
         for(auto &[z2, cols] : col_eq_c) {
@@ -316,13 +256,13 @@ public:
 
                 const Z2 &curr_el = s.get_element(row, c);
 
-                if(curr_el.intPart == 0) continue; 
+                if(curr_el.int_c == 0) continue; 
 
                 bool negative_col = sign == NEG; 
-                bool negative_el = curr_el.intPart < 0;
+                bool negative_el = curr_el.int_c < 0;
                 
-                if(negative_col == negative_el) row_total ++;
-                else row_total --;
+                if(negative_col == negative_el) row_total++;
+                else row_total--;
 
             }
 
@@ -331,23 +271,14 @@ public:
         return UNSET;
     }
 
-    // static const uint8_t* pivot_of_col(const SO6& s, const uint8_t* Row, const uint8_t& col) {
-    //     for(auto r = Row; r != Row + 6; ++r) {
-    //         std::strong_ordering comp = s.get_element(*r, col).intPart <=> 0;
-    //         if(comp == std::strong_ordering::equal) continue; 
-    //         return r;
-    //     }
-    //     return nullptr;
-    // }
-
     static SO6& apply_sign_mask (SO6& s, uint16_t row_sign_mask, uint16_t col_sign_mask, uint8_t* row_perm) {
         for (auto r = row_perm; r < row_perm +6; ++r) {
             uint8_t row = *r;
             for(auto col = 0; col < 6; ++col)  {
                 uint8_t cm = mask_at_index(col_sign_mask, col);
                 uint8_t rm = mask_at_index(row_sign_mask, row);
-                if (cm == NEG || cm == DISAGREE) s.get_element(row,col).negate();
-                if (rm == NEG || rm == DISAGREE) s.get_element(row,col).negate();
+                if (cm == NEG || cm == DISAGREE) s.get_element(row,col) = -s.get_element(row,col);
+                if (rm == NEG || rm == DISAGREE) s.get_element(row,col) = -s.get_element(row,col);
             }
         }
         return s;
@@ -357,54 +288,7 @@ public:
     static bool lex_less(Iterator first_begin, Iterator first_end, Iterator second_begin, Iterator second_end) {
         return (lex_order(first_begin, first_end, second_begin, second_end) == std::strong_ordering::less);
     }
-
-
-    static std::vector<uint16_t> all_row_masks(SO6& s, uint8_t* Row, std::map<std::map<Z2, int>, std::vector<int>> col_eq_c) {
-        std::vector<uint16_t> ret = {0};
-        uint16_t rsm = (utils::sign_masks(s, Row, col_eq_c)).first;
-        for(int i=0; i<6; ++i) {
-            const uint8_t tmp = mask_at_index(rsm, i);
-            if (tmp == AGREE || tmp == DISAGREE){
-                // Duplicate each entry in `ret`, setting bit `i` in the new copies
-                size_t size = ret.size();
-                for (size_t k = 0; k < size; ++k) {
-                    ret.push_back(set_mask_sign(ret[k], i, NEG));
-                    ret.push_back(set_mask_sign(ret[k], i, POS));
-                }
-            }
-        }
-        return ret;
-    }
-
 };
-
-// static bool is_valid_pattern(pattern pat) {
-//     SO6 S, St;
-//     for(int col = 0; col < 6; col++) {
-//         for(int row = 0; row < 6; row++) {
-//             S[col][row].intPart=pat.arr[col][row].first;
-//             S[col][row].sqrt2Part=pat.arr[col][row].second;
-//         }
-//     }
-//     for(int col = 0; col < 6; col++) {
-//         for(int row = 0; row < 6; row++) {
-//             St[col][row].intPart=pat.arr[row][col].first;
-//             St[col][row].sqrt2Part=pat.arr[row][col].second;
-//         }
-//     }
-
-//     S = St*S;
-//     for(int col = 0; col < 6; col++) {
-//         for(int row = 0; row < 6; row++) {
-//             if(!(St[col][row] == 0)) return false;
-//         }
-//     }
-//     return true;
-// }
-
-
-
-        
 #endif // UTILS_HPP
 
 
