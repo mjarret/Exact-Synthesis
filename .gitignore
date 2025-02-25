@@ -4,3 +4,5 @@
 **/*.dat
 **/*.bak
 **/bak
+**/data
+**/data.bak
