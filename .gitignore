@@ -3,6 +3,9 @@
 **/*.o
 **/*.dat
 **/*.bak
-**/bak
-**/data
-**/data.bak
+**/bak/*
+**/data/*
+**/data.bak/*
+data.bak/11.dat
+data/bak/11.dat
+data/bak/
