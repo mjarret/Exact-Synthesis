@@ -2,11 +2,11 @@
 CXX := g++  # Use g++
 CXXFLAGS := -std=c++20 -Ofast -pthread -fopenmp -funroll-loops -flto=auto -march=native -Wfatal-errors
 #--target=x86_64-pc-linux-gnu 
-INCLUDE := -Iinclude/boost -Iinclude/tbb -I. -Iinclude -Iinclude/indicators -Iinclude/indicators/details 
+INCLUDE := -Iinclude/boost -Iinclude/tbb -Iinclude/abseil-cpp -I. -Iinclude -Iinclude/indicators -Iinclude/indicators/details 
 LDFLAGS := -lboost_program_options -ltbb -lstdc++
 
 # Source Files
-SRC := Globals.cpp SO6.cpp main.cpp 
+SRC := SO6.cpp Globals.cpp main.cpp
 OBJ := $(SRC:.cpp=.o)
 
 # Output Executable

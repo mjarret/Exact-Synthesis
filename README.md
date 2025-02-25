@@ -15,6 +15,11 @@ This repository contains the code for exact quantum circuit synthesis on 2 qubit
 ## Prerequisites
 - A C++ compiler (GCC recommended)
 - `make` utility
+- C++17 or later
+- Non-standard libraries:
+  - Boost (for various utilities)
+  - TBB
+  - Benchmark
 
 ## Installation
 1. Clone the repository:
@@ -44,11 +49,6 @@ After building the project, you can run it using:
 ## Usage
 - The core functionality revolves around exact synthesis algorithms using C++ classes defined in the source files.
 - The `data` directory contains necessary input data that the algorithms use.
-
-## Contributing
-Please ensure any code contributions adhere to the current style and structure. Before submitting a pull request, make sure to:
-- Run all relevant tests.
-- Include documentation for any new features.
 
 To contribute:
 1. Fork the repository.

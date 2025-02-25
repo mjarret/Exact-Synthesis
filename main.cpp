@@ -10,6 +10,8 @@
 
 #include <chrono>
 #include <unordered_set>
+#include <tbb/tbb.h>
+#include <tbb/task.h>
 #include <tbb/concurrent_unordered_set.h>
 #include <tbb/concurrent_queue.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -23,6 +25,7 @@
 #include <csignal>
 #include "./Globals.hpp"
 #include "./SO6.hpp"
+#include "./LUT.hpp"
 #include <io_utils.hpp>
 #include <utils.hpp>
 
@@ -37,16 +40,16 @@ tbb::concurrent_queue<std::string> output_queue; // Thread-safe queue for output
  * @param free_multiply_depth The depth until which free multiplication is performed.
  * @param num_generating_sets The total number of generating sets.
  * @param current The current set of SO6 objects.
- * @param generating_set Reference to an array of vectors of SO6 objects to store the generated sets.
+ * @param gen_set Reference to an array of vectors of SO6 objects to store the generated sets.
  */
 std::vector<SO6> storeCosets(int curr_T_count, tbb::concurrent_unordered_set<SO6>& current)
 {
-    std::vector<SO6> generating_set(current.begin(), current.end());
+    std::vector<SO6> gen_set(current.begin(), current.end());
     tbb::concurrent_vector<SO6> filtered_set;
     // Filter elements using a parallel_for loop
-    tbb::parallel_for(size_t(0), generating_set.size(), [&](size_t i) {
-        if (generating_set[i].last_T != 0) {
-            filtered_set.push_back(generating_set[i].left_multiply_by_T(0)); // Thread-safe addition
+    tbb::parallel_for(size_t(0), gen_set.size(), [&](size_t i) {
+        if (gen_set[i].last_T != 0) {
+            filtered_set.push_back(gen_set[i].left_multiply_by_T(0)); // Thread-safe addition
         }
     });
 
@@ -117,8 +120,8 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(const tbb::concurrent_unorde
  */
 int main(int argc, char **argv)
 {
+
     indicators::show_console_cursor(false);
-    io_utils::initialize_progress_tracker();
 
     // Register signal handlers
     signal(SIGINT, io_utils::signal_handler);             // Handle Ctrl+C
@@ -129,54 +132,52 @@ int main(int argc, char **argv)
     Globals::setParameters(argc, argv);         // Initialize parameters to command line argument
     Globals::configure();                       // Configure the globals to remove inconsistencies
 
-    std::vector<tbb::concurrent_unordered_set<SO6>> generating_set = {{}, {SO6::identity()}};
+    LUT gen_set = {{}, {SO6::identity()}};
 
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
     {        
-        indicators::ProgressTracker bars(curr_T_count, generating_set[curr_T_count + 1].size() * 15, generating_set[curr_T_count + 1].size() * 15);    
-        generating_set.push_back(get_next_T_count(generating_set[curr_T_count], generating_set[curr_T_count + 1], bars));
-        bars.complete(generating_set[curr_T_count + 2].size());
+        indicators::ProgressTracker bars(curr_T_count, gen_set.current().size() * 15, gen_set.current().size() * 15);    
+        gen_set.push_back(get_next_T_count(gen_set.prior(), gen_set.current(), bars));
+        bars.complete(gen_set.current().size());
     }
 
-    // std::vector<SO6> to_compute(generating_set[stored_depth_max + 1].begin(), current.end());
-    // to_compute.shrink_to_fit();
-    const size_t set_size = generating_set[stored_depth_max+1].size();
+    const size_t set_size = gen_set.current().size();
     size_t interval_size = 1 + set_size / 100;
     std::atomic_flag progress_lock = ATOMIC_FLAG_INIT;
+    tbb::task_group tg;
 
-    for (int curr_T_count = stored_depth_max; curr_T_count < target_T_count; ++curr_T_count)
-    {
+    int curr_T_count = stored_depth_max;
+    for (auto gs : gen_set) {
+        if(curr_T_count > target_T_count) break;
+
         // Initialize the counters
         std::atomic<size_t> counter{0};   
-
-        size_t tmp = generating_set[2+curr_T_count - stored_depth_max].size();
-        indicators::ProgressTracker bars(curr_T_count, set_size, set_size*tmp);    
-
         tbb::enumerable_thread_specific<size_t> local_counters(0);
-        tbb::parallel_for_each(generating_set[stored_depth_max + 1].begin(), generating_set[stored_depth_max + 1].end(), [&](const SO6& S) {
 
-            // Perform computation
-            if (curr_T_count == stored_depth_max) {
-                for (const SO6 &G : generating_set[2])  {
-                    SO6 N = S.left_multiply_by_T(0);
-                }
-            } else {
-                for (const SO6 &G : (generating_set[2 + curr_T_count - stored_depth_max])) {
-                    SO6 N = G * S;
-                }
-            }
+        indicators::ProgressTracker bars(curr_T_count++, set_size, set_size*gs.size());    
 
-            if (++local_counters.local() >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) { 
-                bars.set_progress(counter.fetch_add(local_counters.local(), std::memory_order_relaxed), set_size*tmp);
-                local_counters.local() = 0;
-                progress_lock.clear(std::memory_order_release); // Allow other threads to enter
-            }
+        tg.run_and_wait([&] {
+            tbb::parallel_for_each(gen_set.current().begin(), gen_set.current().end(), [&](const SO6& S) {
+                // Perform computation
+                if (curr_T_count == stored_depth_max) 
+                    for (const SO6 &G : gs) for (int i = 0; i < 15; i++) SO6 N = S.left_multiply_by_T(i);
+                else 
+                    for (const SO6 &G : gs) SO6 N = G * S;
+
+                if (++local_counters.local() >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) { 
+                    bars.set_progress(counter.fetch_add(local_counters.local(), std::memory_order_relaxed), set_size*gs.size());
+                    local_counters.local() = 0;
+                    progress_lock.clear(std::memory_order_release); // Allow other threads to enter
+                }
+            });
         });
 
-        tbb::this_task_arena::isolate([&] { bars.complete(set_size*tmp); });
+        bars.complete(set_size*gs.size());
     }
-
-    io_utils::progress_tracker.print_progress();
+    
     indicators::show_console_cursor(true);
+    
+    std::cout << gen_set.get_maximum() << std::endl;
+
     return 0;
 }

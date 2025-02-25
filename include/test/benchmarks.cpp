@@ -7,6 +7,7 @@
 #include <thread>
 #include "../Z2.hpp"
 #include "../Z2_Array.hpp"
+#include "../Z2_Pair.hpp"
 
 // Option 1: Struct with a bitfield
 struct BitfieldStruct {
@@ -93,6 +94,14 @@ std::vector<Z2> generateRandomZ2(size_t count) {
     std::mt19937 rng(42);
     std::uniform_int_distribution<uint32_t> dist(0, -1); // Full 32-bit range
     for (size_t i = 0 ; i < count; i++) {data.push_back(Z2(dist(rng)));}
+    return data;
+}
+
+std::vector<Z2_Pair> generateRandomZ2_Pair(size_t count) {
+    std::vector<Z2_Pair> data;
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<uint64_t> dist(0, -1); // Full 32-bit range
+    for (size_t i = 0 ; i < count; i++) {data.push_back(Z2_Pair(dist(rng)));}
     return data;
 }
 
@@ -241,6 +250,22 @@ static void Benchmark_Z2Add(benchmark::State& state) {
     size_t dataSize = state.range(0);
     Z2 left(static_cast<uint32_t>(0));
     Z2 right(static_cast<uint32_t>(0));
+    auto xValues = generateRandomZ2(dataSize);
+
+    for (auto _ : state) {
+        state.PauseTiming(); // Pause timing for setup
+            right = xValues[state.iterations() % xValues.size()];
+        state.ResumeTiming(); // Resume timing for the actual addition
+        #pragma unroll
+        for(size_t i = 0; i < 1000; ++i)
+            benchmark::DoNotOptimize(left += right);
+    }
+}
+
+static void Benchmark_Z2_Pair_Add(benchmark::State& state) {
+    size_t dataSize = state.range(0);
+    Z2_Pair left(static_cast<uint64_t>(0));
+    Z2_Pair right(static_cast<uint64_t>(0));
     auto xValues = generateRandomZ2(dataSize);
 
     for (auto _ : state) {
@@ -466,6 +491,7 @@ static void Benchmark_RawAdd(benchmark::State& state) {
 
 BENCHMARK(Benchmark_RawAdd)->Apply(BenchmarkConfig);
 BENCHMARK(Benchmark_Z2Add)->Apply(BenchmarkConfig);
+BENCHMARK(Benchmark_Z2_Pair_Add)->Apply(BenchmarkConfig);
 
 // BENCHMARK(Benchmark_MortonAddOld)->Apply(BenchmarkConfig);
 

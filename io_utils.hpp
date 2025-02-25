@@ -8,7 +8,6 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
-#include <mutex>
 #include <chrono>
 #include <tbb/concurrent_queue.h>
 #include <indicators/dynamic_progress.hpp>
@@ -87,33 +86,6 @@ namespace io_utils {
         indicators::show_console_cursor(true);
         std::exit(signum);
     }
-
-    // // File I/O Handling
-    // inline void read_pattern_file(const std::string& pattern_file_path) {
-    //     if(pattern_file_path.empty()) return;
-
-    //     std::cout << "[Read] Reading patterns from " << pattern_file_path << std::endl;
-    //     std::ifstream patternFile(pattern_file_path);
-
-    //     if (!patternFile.is_open()) {
-    //         std::cerr << "Failed to open pattern file: " << pattern_file_path << std::endl;
-    //         return;
-    //     }
-
-    //     std::string line;
-    //     while (std::getline(patternFile, line)) {
-    //         pattern currentPattern(line);
-    //         int case_num = currentPattern.case_num();
-    //         if(case_num == 0) continue;
-    //         insert_all_permutations(currentPattern);
-    //     }
-    //     patternFile.close();
-
-    //     pattern identityPattern = pattern::identity();
-    //     pattern_set.unsafe_erase(identityPattern);
-    //     pattern_set.unsafe_erase(identityPattern.pattern_mod());
-    //     std::cout << "[Finished] Loaded " << pattern_set.size() << " non-identity patterns." << std::endl;
-    // }
 
     inline std::ofstream prepare_T_count_io(const int t, uint8_t &stored_depth_max, uint8_t &target_T_count) {
         std::string file_string = "./data/" + std::to_string(t) + ".dat";

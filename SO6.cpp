@@ -113,7 +113,7 @@ void SO6::canonical_form() {
         
         // for(auto sc : utils::all_row_masks(*this, row_perm, col_ecs)) {
         for(uint8_t k = 0; k < 32; ++k) {
-            uint16_t sc = utils::POS;
+            uint16_t sc = utils::POS; // utils::POS = 0b10
             for(int l = 1; l < 6; ++l) {
                 if (k & (1 << (l-1))) {
                     sc = utils::set_mask_sign(sc, l, utils::NEG);
@@ -168,24 +168,22 @@ bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm
  *         distribution of a row, and each value is a vector of row indices that
  *         have the same frequency distribution.
  */
-std::map<std::map<Z2, int>, std::vector<int>> SO6::row_equivalence_classes() {
-    std::map<std::map<Z2, int>, std::vector<int>> ret;
+FrequencyTable SO6::row_equivalence_classes() {
+    FrequencyTable ret;
 
     // Go in order to maintain sort
     for (int row = 0; row < 6; ++row) {
-        std::map<Z2, int> &key = row_frequency[row];
-        ret[key].push_back(row);
+        ret[row_frequency[row]].push_back(row);
     }
     return ret;
 }
 
-std::map<std::map<Z2, int>, std::vector<int>> SO6::col_equivalence_classes() {
-    std::map<std::map<Z2, int>, std::vector<int>> ret;
+FrequencyTable SO6::col_equivalence_classes() {
+    FrequencyTable ret;
 
     // Iterate in order to maintain sort
     for (int col = 0; col < 6; ++col) {
-        std::map<Z2, int> key = col_frequency[col];
-        ret[key].push_back(col);
+        ret[col_frequency[col]].push_back(col);
     }
 
     return ret;
@@ -193,7 +191,7 @@ std::map<std::map<Z2, int>, std::vector<int>> SO6::col_equivalence_classes() {
 
 // This function doesn't work.
 // bool SO6::get_next_equivalence_class(std::vector<std::vector<int>>& row_equivalence_classes) {
-bool SO6::get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int>>& row_equivalence_classes) {
+bool SO6::get_next_equivalence_class(FrequencyTable& row_equivalence_classes) {
     bool more_permutations = false;
     for (auto&[key,group] : row_equivalence_classes) {
         if (std::next_permutation(group.begin(), group.end())) {
@@ -208,7 +206,7 @@ bool SO6::get_next_equivalence_class(std::map<std::map<Z2, int>, std::vector<int
 }
 
 const std::strong_ordering SO6::operator<=>(const SO6 &other) const
-{
+{    
     // I think we can assume they have the same hash value at this point
     for (int col = 0; col < 5; ++col)
     {
@@ -220,12 +218,6 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
     }
 
     return Equal;
-}
-
-const uint8_t SO6::getLDE() const {
-    return std::max_element(arr, arr + 36, [](const Z2& a, const Z2& b) {
-        return a.denom_exp < b.denom_exp;
-    })->denom_exp;
 }
 
 /**
@@ -262,66 +254,4 @@ std::ostream &operator<<(std::ostream &os, const SO6 &m) {
     os << "\n";
 
     return os;
-}
-
-void SO6::unpermuted_print(const uint8_t Row_[6], const uint8_t Col_[6]) const {
-    int maxWidth = 0;
-
-    // Determine the maximum width of elements
-    for (int row = 0; row < 6; ++row) {
-        for (int col = 0; col < 6; ++col) {
-            std::stringstream ss;
-            ss << arr[get_index(Row_[row], Col_[col])];
-            maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-        }
-    }
-
-    for (int col = 0; col < 6; ++col) {
-        std::stringstream ss;
-        maxWidth = std::max(maxWidth, static_cast<int>(std::string("Col [" + std::to_string(col) + "] =" + std::to_string(Col_[col])).length()));
-    }
-
-    const int width = maxWidth + 2;  // Adjust the width by adding some padding
-
-    std::stringstream precomputed_output;
-
-    // Print column headers using Boost.Format
-    precomputed_output << "\n";
-    precomputed_output << boost::format("%-" + std::to_string(width) + "s") % "";  // Adjust spacing for row labels
-    for (int col = 0; col < 6; ++col) {
-        std::stringstream ss;
-        ss << ("Col[" + std::to_string(col) + "] =" + std::to_string(Col_[col]));
-        precomputed_output << boost::format("%-" + std::to_string(width) + "s") % ss.str();
-    }
-    precomputed_output << "\n";
-
-    // Print matrix rows and elements
-    for (int row = 0; row < 6; ++row) {
-        // Print row label with left border
-        precomputed_output << boost::format("Row %-2d ") % (int) Row_[row];
-
-        // Select border style for the row
-        std::string leftBorder = (row == 0) ? "⌈ " : ((row == 5) ? "⌊ " : "| ");
-        std::string rightBorder = (row == 0) ? " ⌉" : ((row == 5) ? " ⌋" : " |");
-
-        precomputed_output << leftBorder;
-
-        // Precompute each element in the row and format it using Boost.Format
-        for (int col = 0; col < 6; ++col) {
-            std::stringstream ss;
-            ss << get_element(Row_[row], Col_[col]);
-            precomputed_output << boost::format("%-" + std::to_string(width) + "s") % ss.str();
-        }
-
-        // Print right border
-        precomputed_output << rightBorder << "\n";
-    }
-    precomputed_output << "\n";
-
-    // Output everything at once after precomputing
-    std::cout << precomputed_output.str();
-}
-
-void SO6::unpermuted_print() const {
-    unpermuted_print(this->Row, this->Col);
 }

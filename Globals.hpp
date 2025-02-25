@@ -2,6 +2,7 @@
 #define GLOBALS_HPP
 
 #include <chrono>
+#include <string>
 
 // Threading and performance tracking
 extern uint8_t THREADS;

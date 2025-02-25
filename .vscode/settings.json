@@ -78,6 +78,20 @@
       "source_location": "cpp",
       "span": "cpp",
       "format": "cpp",
-      "stdfloat": "cpp"
+      "stdfloat": "cpp",
+      "any": "cpp",
+      "ranges": "cpp",
+      "scoped_allocator": "cpp",
+      "regex": "cpp",
+      "future": "cpp",
+      "valarray": "cpp",
+      "__hash_table": "cpp",
+      "__split_buffer": "cpp",
+      "__tree": "cpp",
+      "queue": "cpp",
+      "stack": "cpp"
+   },
+   "files.exclude": {
+      "**/*.o": true
    }
 }

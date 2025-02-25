@@ -60,6 +60,8 @@ public:
     get_value<id>() = setting.value;
   }
 
+  size_t size() const { return bars_.size(); }
+
 private:
   Settings settings_;
   std::atomic<bool> started_{false};
@@ -116,8 +118,11 @@ public:
     total_count_ = bars_.size();
     std::cout << termcolor::reset;
   }
+
+  auto number_of_bars() const { return bars_.size(); }
+  // auto get_time(size_t index) { return bars_[index]->get_time(); }
 };
 
 } // namespace indicators
 
-#endif
+#endif // INDICATORS_DYNAMIC_PROGRESS

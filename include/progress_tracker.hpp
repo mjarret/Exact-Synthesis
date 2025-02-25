@@ -65,6 +65,7 @@ namespace indicators {
          * @param current_t_count The T count for job tracking.
          */
         size_t total_work = 100;
+
         ProgressTracker(int current_t_count, size_t total_work_ = 100, size_t matrix_counter_ = 15) {
             total_work = total_work_;
             matrix_counter = matrix_counter_;
@@ -83,7 +84,7 @@ namespace indicators {
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::high_resolution_clock::now() - start_time
             ).count();
-            
+
             std::ostringstream oss;
             oss << std::setw(10) << std::setfill(' ') << " Time: " 
                 << std::scientific << std::setprecision(2) << duration / 1000.0 << "s";
@@ -106,6 +107,7 @@ namespace indicators {
          */
         size_t get_current_tracker() const { return current_tracker; }
         size_t get_matrix_counter() const { return matrix_counter; }
+
     };
 
 } // namespace progress_tracker

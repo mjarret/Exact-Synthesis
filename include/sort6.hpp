@@ -1,18 +1,17 @@
 #ifndef SORT6_HPP
 #define SORT6_HPP
 
-#include <sstream>
-#include "uint72_t.hpp"
+#include <array>
+#include <algorithm>
+#include <stdexcept>
+#include <iterator>
+#include <functional>
 #include "utils.hpp"
 #include "SO6.hpp"
 #include "sorting_networks.h"
-#include <functional>
 
-class sort6 {
+struct sort6 {
 public:
-
-	// Placeholder for `network` with `uint72_t`, implementation pending details
-	static void network(uint72_t& data) {};
     
 	template <typename Container, typename Comparator>
 	static constexpr void sorting_network_dispatch(Container& data, Comparator& comp) {

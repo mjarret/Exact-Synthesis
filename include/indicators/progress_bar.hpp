@@ -176,8 +176,13 @@ public:
   }
 
   void mark_as_completed() {
+    std::chrono::nanoseconds elapsed_2 = elapsed_;
     get_value<details::ProgressBarOption::completed>() = true;
     print_progress();
+  }
+
+  auto get_time() {
+    return elapsed_2;
   }
 
 private:
@@ -196,6 +201,7 @@ private:
   size_t progress_{0};
   Settings settings_;
   std::chrono::nanoseconds elapsed_;
+  std::chrono::nanoseconds elapsed_2;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_time_point_;
   std::mutex mutex_;
 

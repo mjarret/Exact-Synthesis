@@ -1,2 +1,6 @@
-
 .codegpt
+**/*.out
+**/*.o
+**/*.dat
+**/*.bak
+**/bak
