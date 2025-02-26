@@ -2,6 +2,7 @@
 #define LUT_HPP
 
 #include <vector>
+#include <optional>
 #include <tbb/concurrent_unordered_set.h>
 #include "./Z2.hpp"
 #include "./SO6.hpp"

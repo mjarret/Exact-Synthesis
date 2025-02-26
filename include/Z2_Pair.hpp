@@ -40,6 +40,8 @@ struct Z2_Pair {
     #define ADD_NUMERATORS(LEFT, RIGHT) \
         (LEFT + RIGHT - (((LEFT & MASK_21BIT_BUCKETS) + (RIGHT & MASK_21BIT_BUCKETS)) & CARRY_MASK)) & FINAL_MASK
  
+
+
     Z2_Pair operator+= (const Z2_Pair& other) {
         __uint128_t differing_bits = (data & DENOM_EXP_MASK) - (other.data & DENOM_EXP_MASK);
         data = ADD_NUMERATORS(data, other.data);
