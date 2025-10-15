@@ -10,3 +10,17 @@ data.bak/11.dat
 data/bak/11.dat
 data/bak/
 backup/
+main.out
+perm6_bench
+perm6_compact_bench
+perm6_compact_bench.out
+perm6_compact_test
+perm6_packed_bench
+perm6_packed_test
+perm6_test
+benchmarks/*.o
+benchmarks/*.out
+benchmarks/*.d
+*.log
+comparison_log.txt
+.deadcode.backup

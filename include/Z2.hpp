@@ -6,7 +6,6 @@
 #include <iostream>
 #include <boost/preprocessor/control/if.hpp>
 #include <boost/preprocessor/comparison/equal.hpp>
-#include <sstream>
 
 #define bits_for_numerator 16
 #define bits_for_int_c (bits_for_numerator/2)
@@ -298,21 +297,7 @@ struct Z2 {
         *this >>= int_zeros;
     }
 
-    std::string serialize() const {
-        std::ostringstream oss;
-        oss << static_cast<int>(int_c) << " "
-            << static_cast<int>(sqrt2_c) << " "
-            << denom_exp;
-        return oss.str();
-    }
-
-    static Z2 deserialize(const std::string& data) {
-        std::istringstream iss(data);
-        int int_c, sqrt2_c;
-        int16_t denom_exp;
-        iss >> int_c >> sqrt2_c >> denom_exp;
-        return Z2(static_cast<uint8_t>(int_c), static_cast<uint8_t>(sqrt2_c), denom_exp);
-    }
+    // Serialization helpers removed (unused)
 };
 
 namespace std {

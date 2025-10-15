@@ -6,7 +6,7 @@
 #include <benchmark/benchmark.h>
 #include <vector>
 #include <random>
-#include "SO6.hpp"
+#include "so6/SO6.hpp"
 
 static std::vector<SO6> make_chain(size_t n) {
     std::vector<SO6> v; v.reserve(n);
@@ -45,4 +45,3 @@ BENCHMARK(BM_FreqHash_Rows)->Arg(256)->Arg(1024);
 BENCHMARK(BM_FreqHash_Cols)->Arg(256)->Arg(1024);
 
 BENCHMARK_MAIN();
-

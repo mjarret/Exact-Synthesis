@@ -1,4 +1,7 @@
 
+// Derived in part from the "indicators" library (MIT)
+// Upstream: https://github.com/p-ranav/indicators
+// See include/indicators/NOTICE and LICENSE for authorship and license details.
 #ifndef INDICATORS_DYNAMIC_PROGRESS
 #define INDICATORS_DYNAMIC_PROGRESS
 

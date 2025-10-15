@@ -1,18 +1,23 @@
-#include "Globals.hpp"
+#include "config/Globals.hpp"
 #include <string>
 #include <iostream>
 #include <chrono>
-#include <thread> 
-#include <boost/program_options/options_description.hpp>
-#include <boost/program_options/variables_map.hpp>
-#include <boost/program_options/parsers.hpp>
+#include <thread>
+#include <cstdlib>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+#include <type_traits>
+#include <cmath>
 
-namespace po = boost::program_options;
+// Lightweight CLI: use header-only cxxopts (same as sibling Schelling workspace)
+#include <third_party/cxxopts.hpp>
 
 // Threading and performance tracking
 uint8_t THREADS; //store maximum number of threads here
-std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::high_resolution_clock::now(); // Initialize with current time
-std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(); // Initialize as zero
+std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::high_resolution_clock::now();    // Initialize with current time
+std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero();                              // Initialize as zero
 
 // Pattern handling and search settings     
 std::string pattern_file = "";
@@ -28,48 +33,57 @@ bool cases_flag = false;
 
 void Globals::setParameters(int argc, char *argv[]) {
     try {
-        // Define options
-        po::options_description desc("Allowed options");
-        int tcount_param;
-        int stored_depth_param;
-        int threads_param;
+        // defaults
+        int tcount_param = 8;
+        int stored_depth_param = 0;
+        std::string threads_s = std::to_string(std::max(1u, std::thread::hardware_concurrency() - 1));
+        bool verbose_flag = false;
+        std::string root_s;
 
+        cxxopts::Options desc("Exact-Synthesis", "Exact-Synthesis options");
         desc.add_options()
-            ("help,h", "produce help message")
-            ("tcount,t", po::value<int>(&tcount_param)->default_value(8), "target T count")
-            ("stored_depth,s", po::value<int>(&stored_depth_param)->default_value(0), "maximum stored depth")
-            ("pattern_file,f", po::value<std::string>(&pattern_file), "pattern file")
-            ("verbose,v", po::bool_switch(), "enable verbosity")
-            ("threads,n", po::value<std::string>()->default_value(std::to_string(std::thread::hardware_concurrency()-1)), "number of threads")
-            ("root,r", po::value<std::string>(), "set the root of the search tree by specifying a circuit.")
-            ("cases,c", po::bool_switch(&cases_flag), "flag to tell code whether we are looking for specific cases (not used).");
-        po::variables_map vm;
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify(vm);
+            ("h,help", "show help")
+            ("t,tcount", "target T count", cxxopts::value<int>(tcount_param))
+            ("s,stored_depth", "maximum stored depth", cxxopts::value<int>(stored_depth_param))
+            ("f,pattern_file", "pattern file", cxxopts::value<std::string>(pattern_file))
+            ("v,verbose", "enable verbosity", cxxopts::value<bool>(verbose_flag))
+            ("n,threads", "number of threads (number or 'max')", cxxopts::value<std::string>(threads_s))
+            ("r,root", "search tree root circuit string", cxxopts::value<std::string>(root_s))
+            ("c,cases", "looking for specific cases (not used)", cxxopts::value<bool>(cases_flag))
+        ;
 
-        target_T_count = (uint8_t) (std::max(1,tcount_param));
-        stored_depth_max = (uint8_t) stored_depth_param;
-        num_gen_sets = stored_depth_max;
-        // num_gen_sets = utils::num_generating_sets(target_T_count, stored_depth_max);
-   
-        if (vm.count("help")) {
-            std::cout << desc << "\n";
+        auto result = desc.parse(argc, argv);
+        if (result.count("help")) {
+            std::cout << desc.help() << "\n";
             std::exit(EXIT_SUCCESS);
         }
 
-        if (vm.count("threads")) {
-            if(vm["threads"].as<std::string>() == "max") {
-                THREADS = std::thread::hardware_concurrency();
-            } else {
-                THREADS = (uint8_t) std::stoi(vm["threads"].as<std::string>());
+        // commit parsed values
+        target_T_count = static_cast<uint8_t>(std::max(1, tcount_param));
+        stored_depth_max = static_cast<uint8_t>(std::max(0, stored_depth_param));
+        num_gen_sets = stored_depth_max;
+        // optional fields
+        if (!root_s.empty()) root_string = root_s;
+
+        // threads: numeric or "max"
+        if (threads_s == "max") {
+            THREADS = static_cast<uint8_t>(std::max(1u, std::thread::hardware_concurrency()));
+        } else {
+            try {
+                int tn = std::stoi(threads_s);
+                THREADS = static_cast<uint8_t>(tn);
+            } catch (...) {
+                THREADS = static_cast<uint8_t>(std::max(1u, std::thread::hardware_concurrency() - 1));
             }
         }
 
+        // unused global currently, but keep behavior
+        (void)verbose_flag; // suppress unused warning if not used elsewhere
 
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::exit(EXIT_FAILURE);
-    } 
+    }
 }
 
 // Configure run based on global parameters
@@ -113,5 +127,3 @@ void Globals::configure()
         std::cout << "[Config] Looking for all cases.\n";
     }
 }
-
-

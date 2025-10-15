@@ -7,81 +7,21 @@
  */
 
 #include <tbb/task_group.h>
-#include <tbb/concurrent_unordered_set.h>
-#include <tbb/concurrent_queue.h>
-#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
-#include <tbb/global_control.h>
-#include <progress_tracker.hpp>
+#include <tbb/enumerable_thread_specific.h>
+#include <util/progress_tracker.hpp>
 #include <atomic>
 #include <csignal>
-#include "Globals.hpp"
-#include "SO6.hpp"
-#include "LUT.hpp" // Ensure this header file defines the LUT class
-#include "io_utils.hpp"
-#include "utils.hpp"
+#include "config/Globals.hpp"
+#include "so6/SO6.hpp"
+#include "so6/LUT.hpp" // Ensure this header file defines the LUT class
+#include "util/io_utils.hpp"
+#include "algo/Generate.hpp"
 
 
-tbb::global_control c(tbb::global_control::max_allowed_parallelism, std::max(static_cast<unsigned int>(1), std::thread::hardware_concurrency()-1));
+// tbb::global_control c(tbb::global_control::max_allowed_parallelism, std::max(static_cast<unsigned int>(1), std::thread::hardware_concurrency()-1));
 
-tbb::concurrent_queue<std::string> output_queue; // Thread-safe queue for output
-
-tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::ProgressTracker* bars = nullptr) {
-    auto& current = gen_set.current();
-    auto& prior = gen_set.prior();
-    tbb::concurrent_unordered_set<SO6> next;
-
-    // Removed unused identity() copy to avoid unnecessary large object construction
-
-    std::atomic<size_t> global_counter{0};
-    std::atomic_flag progress_lock = ATOMIC_FLAG_INIT;
-
-    size_t interval_size = (current.size() * 15)/100;
-    tbb::enumerable_thread_specific<size_t> local_counters;
-
-    tbb::parallel_for_each(current.begin(), current.end(), [&](const SO6& S) {
-            auto& local_counter = local_counters.local();
-
-            uint8_t last_T = S.last_T;
-            for (size_t T = 0; T < last_T; ++T, ++local_counter)
-            {           
-                SO6 toInsert = S.left_multiply_by_T(T);
-                if(prior.find(toInsert) == prior.end())  next.insert(toInsert);
-            }
-
-            for (int T = last_T + 1; T < 15; ++T, ++local_counter)
-            {
-                SO6 toInsert = S.left_multiply_by_T(T);
-                if(prior.find(toInsert) == prior.end()) next.insert(toInsert);
-            }
-
-            if (local_counter >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) { 
-                if (bars) {
-                    bars->set_progress(global_counter.fetch_add(local_counter, std::memory_order_relaxed), next.size());
-                }
-                local_counter = 0;
-                progress_lock.clear(std::memory_order_release); // Allow other threads to enter
-            }
-        }
-    );
-
-    gen_set.push_back(std::move(next));
-    return next;
-}
-
-LUT create_lookup_table (const SO6& root = SO6::identity(), const std::string prefix = "") {
-    LUT gen_set(root, prefix);               // Initialize the generating set with the identity element as root
-    std::unique_ptr<indicators::ProgressTracker> bars;
-    for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count)
-    {        
-        if(prefix.empty()) bars = std::make_unique<indicators::ProgressTracker>(curr_T_count, gen_set.current().size() * 15, gen_set.current().size() * 15);    
-        get_next_T_count(gen_set, bars.get());
-        gen_set.finalize_current_set();
-        if(prefix.empty()) bars->complete(gen_set.current().size());
-    }
-
-    return gen_set;
-}
+// Generation helpers moved to algo:: (no logic changes)
 
 
 /**
@@ -107,7 +47,7 @@ int main(int argc, char **argv)
     Globals::setParameters(argc, argv);         // Initialize parameters to command line argument
     Globals::configure();                       // Configure the globals to remove inconsistencies
 
-    LUT gen_set = create_lookup_table();               // Initialize the generating set with the identity element as root
+    LUT gen_set = algo::create_lookup_table();               // Initialize the generating set with the identity element as root
 
     const size_t set_size = gen_set.current().size();
     size_t interval_size = 1 + set_size / 100;

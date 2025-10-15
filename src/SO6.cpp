@@ -1,17 +1,13 @@
-#include <iomanip>  // For std::setw
-#include <fstream>
-#include <boost/format.hpp>
-#include "SO6.hpp"
-#include "Globals.hpp"
-#include "utils.hpp"
-#include "sort6.hpp"
-#include "Z2.hpp"
+#include <stdexcept>
+#include "so6/SO6.hpp"
+#include "config/Globals.hpp"
+#include "util/utils.hpp"
+#include "sort/sort6.hpp"
 
 // Alias the values of std::strong_ordering for cleaner code
 constexpr auto Equal = std::strong_ordering::equal;
 constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
-constexpr auto Equivalent = std::strong_ordering::equivalent;
 
 /**
  * Basic constructor. Initializes Zero matrix.
@@ -157,38 +153,4 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
     return  comp;
 }
 
-/**
- * Overloads << function for SO6.
- * @param os reference to ostream object needed to implement <<
- * @param m reference to SO6 object to be displayed
- * @returns reference ostream with the matrix's display form appended
- */
-std::ostream &operator<<(std::ostream &os, const SO6 &m) {
-    int maxWidth = 0;
-
-    // Find the maximum width of the elements
-    for (int row = 0; row < 6; row++) {
-        for (int col = 0; col < 6; col++) {
-            std::stringstream ss;
-            ss << m.get_element(row,col);
-            maxWidth = std::max(maxWidth, static_cast<int>(ss.str().length()));
-        }
-    }
-
-    const int width = maxWidth + 3; // Adjust the width by adding 2
-
-    os << "\n";
-    for (int row = 0; row < 6; row++) {
-        std::string leftBorder = (row == 0) ? "⌈" : ((row == 5) ? "⌊" : "|");
-        std::string rightBorder = (row == 0) ? "⌉" : ((row == 5) ? "⌋" : "|");
-
-        os << leftBorder << "  ";
-        for (int col = 0; col < 6; col++) {
-            os << std::setw(width) << m.get_element(row,col);
-        }
-        os << "\t" << rightBorder << "\n";
-    }
-    os << "\n";
-
-    return os;
-}
+// Stream operator<< for SO6 removed (unused)

@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdint>
 #include <utility>
+#include <iterator>
+#include <cstddef>
 #include "Z2.hpp"
 
 // Layout: structure-of-arrays to avoid per-entry padding.
@@ -128,6 +130,16 @@ struct SmallFreqMap {
             if (get_count(i) == 0) { keys[i] = k; set_count(i, 0); return CountRef{this, i}; }
         }
         __builtin_unreachable();
+    }
+
+    // Convenience helpers (inline, zero-cost abstraction)
+    void increment(const Z2& k) { (*this)[k]++; }
+    void decrement(const Z2& k) {
+        auto it = find(k);
+        if (it != end()) {
+            if ((*it).second == 1) erase(it);
+            else --(*it).second;
+        }
     }
 
     void erase(iterator it) {

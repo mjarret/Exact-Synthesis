@@ -1,6 +1,6 @@
-#include "SO6.hpp"
-#include "utils.hpp"
-#include "sort6.hpp"
+#include "so6/SO6.hpp"
+#include "util/utils.hpp"
+#include "sort/sort6.hpp"
 #include <algorithm>
 
 using std::strong_ordering;
@@ -69,9 +69,12 @@ FrequencyTable SO6::row_equivalence_classes() {
         FrequencyKey key;
         // Copy entries into a small sortable array
         for (const auto& kv : row_frequency[row]) {
-            key.entries[key.size++] = {kv.first, kv.second};
+            if (key.size < key.entries.size()) {
+                key.entries[key.size++] = {kv.first, kv.second};
+            }
         }
-        std::sort(key.entries.begin(), key.entries.begin() + key.size,
+        const std::size_t n = std::min<std::size_t>(key.size, key.entries.size());
+        std::sort(key.entries.begin(), key.entries.begin() + n,
                   [](auto const& a, auto const& b){ if (auto c = a.first <=> b.first; c != 0) return c < 0; return a.second < b.second; });
         ret[key].push_back(row);
     }
@@ -83,9 +86,12 @@ FrequencyTable SO6::col_equivalence_classes() {
     for (int col = 0; col < 6; ++col) {
         FrequencyKey key;
         for (const auto& kv : col_frequency[col]) {
-            key.entries[key.size++] = {kv.first, kv.second};
+            if (key.size < key.entries.size()) {
+                key.entries[key.size++] = {kv.first, kv.second};
+            }
         }
-        std::sort(key.entries.begin(), key.entries.begin() + key.size,
+        const std::size_t n = std::min<std::size_t>(key.size, key.entries.size());
+        std::sort(key.entries.begin(), key.entries.begin() + n,
                   [](auto const& a, auto const& b){ if (auto c = a.first <=> b.first; c != 0) return c < 0; return a.second < b.second; });
         ret[key].push_back(col);
     }

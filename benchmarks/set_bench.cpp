@@ -7,8 +7,8 @@
 #include <random>
 #include <vector>
 #include <unordered_set>
-#include "SO6.hpp"
-#include "so6_flat_set.hpp"
+#include "so6/SO6.hpp"
+#include "ds/so6_flat_set.hpp"
 
 static std::vector<SO6> make_dataset(size_t n) {
     std::vector<SO6> v; v.reserve(n);
@@ -49,4 +49,3 @@ BENCHMARK(BM_UnorderedSet_Insert)->Arg(1024)->Arg(4096)->Arg(16384);
 BENCHMARK(BM_FlatSet_Insert)->Arg(1024)->Arg(4096)->Arg(16384);
 
 BENCHMARK_MAIN();
-
