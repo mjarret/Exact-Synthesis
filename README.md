@@ -74,6 +74,10 @@ Notes
 - termcolor (BSD) and Unicode wcwidth (Markus Kuhn) are included under their original notices; see `include/indicators/*`.
 - CLI uses a lightweight, vendored `cxxopts.hpp` shim (`include/third_party/cxxopts.hpp`).
 
+## History & Authorship
+- The current codebase is a from‑scratch rewrite (2025) authored by Michael Jarret; algorithms co‑authored by Sam Mendelson. See `AUTHORS.md`.
+- Prior contributors to earlier versions are acknowledged in `ACKNOWLEDGMENTS.md`. Full history is preserved on the `legacy/full-history` branch.
+
 ## Contributing
 See `CONTRIBUTING.md` for guidelines, style, and workflow.
 
@@ -81,4 +85,3 @@ See `CONTRIBUTING.md` for guidelines, style, and workflow.
 - oneTBB missing: `fatal error: tbb/...` → `sudo apt install -y libtbb-dev`
 - Link errors on Linux: ensure `-ltbb` is available and the library path is discoverable.
 - Progress bars misaligned: check terminal width reporting and fonts; disable if needed in `util/progress_tracker.hpp`.
-
