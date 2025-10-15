@@ -6,11 +6,27 @@
 #include <iostream>
 #include <boost/preprocessor/control/if.hpp>
 #include <boost/preprocessor/comparison/equal.hpp>
+#include <sstream>
 
-#define bits_for_numerator 24
+#define bits_for_numerator 16
 #define bits_for_int_c (bits_for_numerator/2)
 #define bits_for_sqrt2_c (bits_for_numerator/2)
-#define bits_for_denom_exp 8
+#define bits_for_denom_exp 16
+#define axis (1<<bits_for_int_c)
+#define int_c_mask (axis-1)
+#define numerator_mask ((1<<bits_for_numerator)-1)
+#define sqrt2_c_mask (numerator_mask&(~int_c_mask))
+
+#if bits_for_numerator == 16
+    #define BYTE_SWAP(val) (__builtin_bswap16(val))
+#elif bits_for_numerator == 32
+    #define BYTE_SWAP(val) (__builtin_bswap32(val))
+#elif bits_for_numerator == 64
+    #define BYTE_SWAP(val) (__builtin_bswap64(val))
+#else
+    #define BYTE_SWAP(val) (((val & int_c_mask) << bits_for_int_c) | ((val & sqrt2_c_mask) >> bits_for_int_c))
+#endif
+
 
 // Need about twice as many bits as t counts to store largest possible
 
@@ -19,13 +35,13 @@ struct Z2 {
     union {
         struct {
             union {
-                uint16_t numerator_bits : 16; ///< Packed 16 bits for int_c and sqrt2_c
+                uint16_t numerator_bits : bits_for_numerator; ///< Packed 16 bits for int_c and sqrt2_c
                 struct {
-                    int8_t int_c : 8;   ///< Lower 8 bits representing the integer coefficient
-                    int8_t sqrt2_c : 8; ///< Upper 8 bits representing the sqrt(2) coefficient
+                    int8_t int_c : bits_for_int_c;   ///< Lower 8 bits representing the integer coefficient
+                    int8_t sqrt2_c : bits_for_sqrt2_c; ///< Upper 8 bits representing the sqrt(2) coefficient
                 };
             };
-            int16_t denom_exp : 16; ///< Exponent of the denominator
+            uint16_t denom_exp : bits_for_denom_exp; ///< Exponent of the denominator
         };
         uint32_t data; ///< Full 32-bit representation
     };
@@ -53,10 +69,10 @@ struct Z2 {
     /// - First, shifts `n` to the right by `shift`.
     /// - Adjusts for correct bit alignment.
     /// - Performs an arithmetic swap using addition, just like `LEFT_SHIFT_AND_SWAP`.
-    #define LEFT_SHIFT_AND_SWAP(n) (__builtin_bswap16(n + (n & 0xFF00)))
+    #define LEFT_SHIFT_AND_SWAP(n) (BYTE_SWAP(n + (n & sqrt2_c_mask)))
     
-    #define U_MIDDLE_MASK(s) (~((256 << s) - 256))
-    #define L_MIDDLE_MASK(s) (256 - (256 >> s))
+    #define U_MIDDLE_MASK(s) (~((axis << s) - axis))
+    #define L_MIDDLE_MASK(s) (axis - (axis >> s))
 
     #define LOWER_SIGN_EXTEND(x, s) \
         (((x & 128)<< (s+1)) - (x & 128)) | (x & U_MIDDLE_MASK(s))
@@ -65,8 +81,8 @@ struct Z2 {
         ((x ^ UPPER_SIGN_MASK(s)) - UPPER_SIGN_MASK(s))    
     
     #define RIGHT_SHIFT_AND_SWAP(n, shift) (                            \
-            ((static_cast<int>(n) >> 8) & 0xFF) |                       \
-            ((((static_cast<int>(n) << 8)&0xFF00) >> 1) &0xFF00)        \
+            ((static_cast<int>(n) >> 8) & int_c_mask) |                       \
+            ((((static_cast<int>(n) << 8)&sqrt2_c_mask) >> 1) &sqrt2_c_mask)        \
     );
     
     #define NUMERATOR_LEFT_SHIFT(n, s) ( (n << (s/2)) & U_MIDDLE_MASK(s/2) )
@@ -83,8 +99,12 @@ struct Z2 {
     /// - `RIGHT` is then **shifted into place** based on `SHIFT`, correctly handling sign extensions.
     /// - The adjusted `RIGHT` is added to `LEFT`.
     #define LEFT_SHIFT_COEFFICIENTS(x, SHIFT) (x << (SHIFT>>1))
-    #define ADD_SHIFTED_NUMERATORS(LEFT, RIGHT, SHIFT) \
-        (LEFT + (RIGHT << (SHIFT>>1)) - ((((LEFT&0xFF) + (RIGHT&0xFF))>>8)<<8) ) & 0xFFFF
+    #define ADD_NUMERATORS(LEFT, RIGHT) \
+        (((LEFT + RIGHT) & numerator_mask) - ((((LEFT & int_c_mask) + (RIGHT & int_c_mask)) >> 8) << 8))
+    #define ADD_SHIFTED_NUMERATORS(LEFT, RIGHT, SHIFT)                                \
+        (((LEFT + ((RIGHT) << ((SHIFT) >> 1))) & numerator_mask)                      \
+        - ((((LEFT & int_c_mask) + ((RIGHT << ((SHIFT) >> 1)) & int_c_mask)) >> 8) << 8))
+
 
     //======================================================================
     // Macros for Handling Addition With Different Denominator Exponents
@@ -92,27 +112,27 @@ struct Z2 {
 
     /// Handles the case when `other` has a denominator exponent less than `this` and `N` is even.
     #define EVEN_CASE_P(N) case N: { \
-        numerator_bits = ADD_SHIFTED_NUMERATORS(numerator_bits, NUMERATOR_LEFT_SHIFT(other.numerator_bits, N), 0); \
+        numerator_bits = ADD_NUMERATORS(numerator_bits, NUMERATOR_LEFT_SHIFT(other.numerator_bits, N)); \
         BOOST_PP_IF(BOOST_PP_EQUAL(N, 0), reduce(); , ) \
         break; \
     }
 
     /// Handles the case when `other` has a denominator exponent less than `this` and `N` is odd.
     #define ODD_CASE_P(N) case N: { \
-        numerator_bits = ADD_SHIFTED_NUMERATORS(numerator_bits, NUMERATOR_LEFT_SHIFT(LEFT_SHIFT_AND_SWAP(other.numerator_bits), N),0); \
+        numerator_bits = ADD_NUMERATORS(numerator_bits, NUMERATOR_LEFT_SHIFT(LEFT_SHIFT_AND_SWAP(other.numerator_bits), N)); \
         break; \
     }
 
     /// Handles the case when `other` has a denominator exponent greater than `this` and `N` is even.
     #define EVEN_CASE_N(N) case -N: { \
-        numerator_bits = ADD_SHIFTED_NUMERATORS(other.numerator_bits, NUMERATOR_LEFT_SHIFT(numerator_bits, N), 0); \
+        numerator_bits = ADD_NUMERATORS(other.numerator_bits, NUMERATOR_LEFT_SHIFT(numerator_bits, N)); \
         denom_exp = other.denom_exp; \
         break; \
     }
 
     /// Handles the case when `other` has a denominator exponent greater than `this` and `N` is odd.
     #define ODD_CASE_N(N) case -N: { \
-        numerator_bits = ADD_SHIFTED_NUMERATORS(other.numerator_bits, NUMERATOR_LEFT_SHIFT(LEFT_SHIFT_AND_SWAP(numerator_bits), N),0); \
+        numerator_bits = ADD_NUMERATORS(other.numerator_bits, NUMERATOR_LEFT_SHIFT(LEFT_SHIFT_AND_SWAP(numerator_bits), N)); \
         denom_exp = other.denom_exp; \
         break; \
     }
@@ -137,6 +157,10 @@ struct Z2 {
         numerator_bits = (numerator_bits << shift) & U_MIDDLE_MASK(shift);
         denom_exp = (denom_exp+2*shift)*(numerator_bits != 0);
         return *this;
+    }
+    constexpr inline __attribute__((always_inline)) Z2& operator<<(uint8_t shift) const {
+        Z2 ret = *this;
+        return (ret <<= shift);
     }
 
     /// @brief Addition-assignment operator
@@ -169,11 +193,12 @@ struct Z2 {
         if(other.numerator_bits == 0) return (*this).numerator_bits;
         return *this += (-other);
     }
-
+    
     /// @brief Multiplication-assignment operator
     /// @param other The Z2 object to multiply
     /// @return Reference to the updated Z2 object
     Z2& operator*=(const Z2& other) {
+        numerator_bits = numerator_bits & int_c_mask;
         int_c = int_c * other.int_c + ((sqrt2_c * other.sqrt2_c) << 1);
         sqrt2_c = int_c * other.sqrt2_c + sqrt2_c * other.int_c;
         denom_exp += other.denom_exp;
@@ -208,7 +233,7 @@ struct Z2 {
     /// @brief Negation operator
     /// @return A new Z2 object representing the negation
     constexpr inline __attribute__((always_inline)) Z2 operator-() const {
-        return Z2(static_cast<uint16_t>((256-numerator_bits)*(numerator_bits != 0)), denom_exp);
+        return Z2(static_cast<uint16_t>((axis-numerator_bits)*(numerator_bits != 0)), denom_exp);
     }
 
     /// @brief Three-way comparison operator
@@ -216,7 +241,7 @@ struct Z2 {
     /// @return A strong ordering result
     #if __cpp_impl_three_way_comparison
     std::strong_ordering operator<=>(const Z2& other) const {
-        return data*(int_c != 0) <=> other.data*(other.int_c != 0); // This won't necessarily work, because of the case where int_c == 0
+        return data*((numerator_bits & int_c_mask) != 0) <=> other.data*((other.numerator_bits & int_c_mask) != 0); 
     }
     #else
     bool operator<(const Z2& other) const {
@@ -237,7 +262,7 @@ struct Z2 {
     #endif
     
     bool operator==(const Z2& other) const {
-        return data*(int_c != 0) == other.data*(other.int_c != 0);
+        return data*((numerator_bits & int_c_mask) != 0) == other.data*((other.numerator_bits & int_c_mask) != 0); 
     }
     
     /// @brief Assignment operator
@@ -262,15 +287,31 @@ struct Z2 {
 
     /// @brief Reduces the Z2 object by shifting the numerator bits
     constexpr inline __attribute__((always_inline)) void reduce() { 
-        const uint8_t int_zeros = std::countr_zero(static_cast<uint8_t>(int_c)), sq_zeros = std::countr_zero(static_cast<uint8_t>(sqrt2_c));
+        const uint8_t int_zeros = std::countr_zero(static_cast<uint8_t>(int_c & 0xFF)), sq_zeros = std::countr_zero(static_cast<uint8_t>(sqrt2_c & 0xFF));
 
         if(int_zeros > sq_zeros) {
             int_c >>= 1;
-            numerator_bits = __builtin_bswap16(static_cast<uint16_t>(static_cast<int16_t>(LOWER_SIGN_EXTEND(numerator_bits, sq_zeros))>>sq_zeros));
+            numerator_bits = BYTE_SWAP(static_cast<uint16_t>(static_cast<int16_t>(LOWER_SIGN_EXTEND(numerator_bits, sq_zeros))>>sq_zeros));
             denom_exp -= 2*sq_zeros + 1;
             return;
         }
         *this >>= int_zeros;
+    }
+
+    std::string serialize() const {
+        std::ostringstream oss;
+        oss << static_cast<int>(int_c) << " "
+            << static_cast<int>(sqrt2_c) << " "
+            << denom_exp;
+        return oss.str();
+    }
+
+    static Z2 deserialize(const std::string& data) {
+        std::istringstream iss(data);
+        int int_c, sqrt2_c;
+        int16_t denom_exp;
+        iss >> int_c >> sqrt2_c >> denom_exp;
+        return Z2(static_cast<uint8_t>(int_c), static_cast<uint8_t>(sqrt2_c), denom_exp);
     }
 };
 
@@ -279,16 +320,17 @@ namespace std {
     /// @param z The Z2 object
     /// @return A new Z2 object representing the absolute value
     inline Z2 abs(const Z2& z) {
-        return Z2(std::abs(z.int_c), std::abs(z.sqrt2_c), z.denom_exp);
+        int num = (z.int_c < 0) ? axis - z.numerator_bits : z.numerator_bits;
+        return Z2(num, z.denom_exp);
     }
 
     template <>
     struct hash<Z2> {
         /// @brief Hash function for Z2 objects
         /// @param z The Z2 object
-        /// @return The hash value
+        /// @return The hash value (z itself since it's small)
         std::size_t operator()(const Z2& z) const {
-            return std::hash<uint32_t>{}(z.data);
+            return z.data & 0xFFFFFF;
         }
     };
 }

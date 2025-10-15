@@ -2522,8 +2522,6 @@ using unordered_map =
                       std::is_nothrow_move_assignable<robin_hood::pair<Key, T>>::value,
                   MaxLoadFactor100, Key, T, Hash, KeyEqual>;
 
-// set
-
 template <typename Key, typename Hash = hash<Key>, typename KeyEqual = std::equal_to<Key>,
           size_t MaxLoadFactor100 = 80>
 using unordered_flat_set = detail::Table<true, MaxLoadFactor100, Key, void, Hash, KeyEqual>;

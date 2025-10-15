@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <sstream>
 #include <chrono>
+#include <fstream>
+#include <unistd.h>
 #include <indicators/dynamic_progress.hpp>
 #include <indicators/progress_bar.hpp>
 
@@ -21,6 +23,19 @@ namespace indicators {
         size_t current_tracker;
         size_t matrix_counter;
         std::chrono::_V2::high_resolution_clock::time_point start_time;
+
+        // Read resident set size (RSS) in bytes from /proc/self/statm (Linux)
+        static inline size_t process_rss_bytes() {
+            long resident_pages = 0;
+            std::ifstream statm("/proc/self/statm");
+            if (statm.good()) {
+                long size_pages = 0; // unused
+                statm >> size_pages >> resident_pages;
+            }
+            long page_size = sysconf(_SC_PAGESIZE);
+            if (resident_pages <= 0 || page_size <= 0) return 0;
+            return static_cast<size_t>(resident_pages) * static_cast<size_t>(page_size);
+        }
 
         // Private method to add a job tracker
         size_t add_job_to_tracker(int t_count, size_t total_work = 100) {
@@ -91,13 +106,25 @@ namespace indicators {
 
             progress_bars[current_tracker].set_option(indicators::option::PostfixText{oss.str()});
             progress_bars[current_tracker].set_progress(total_work);
-            progress_bars[matrix_counter].set_option(indicators::option::PostfixText{std::to_string(result_size)});
+            // Also show memory usage alongside discovered count
+            {
+                size_t rss = process_rss_bytes();
+                double rss_mb = rss / (1024.0 * 1024.0);
+                std::ostringstream m;
+                m << result_size << " | RSS: " << std::fixed << std::setprecision(1) << rss_mb << " MB";
+                progress_bars[matrix_counter].set_option(indicators::option::PostfixText{m.str()});
+            }
             progress_bars[matrix_counter];
         }
 
         inline void set_progress(size_t progress, size_t set_size) {
             if(kill_signal_received) return;
-            progress_bars[matrix_counter].set_option(indicators::option::PostfixText{std::to_string(set_size)});
+            // Update discovered count and current process RSS
+            size_t rss = process_rss_bytes();
+            double rss_mb = rss / (1024.0 * 1024.0);
+            std::ostringstream m;
+            m << set_size << " | RSS: " << std::fixed << std::setprecision(1) << rss_mb << " MB";
+            progress_bars[matrix_counter].set_option(indicators::option::PostfixText{m.str()});
             progress_bars[matrix_counter].set_progress(progress);
             progress_bars[current_tracker].set_progress(progress);
         }

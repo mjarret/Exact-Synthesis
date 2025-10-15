@@ -9,163 +9,76 @@
 
 struct Z2_Array {
     union {
-        __uint128_t data; // 128-bit representation of the row
-        struct{
-            uint64_t low : 64; 
-            uint64_t high : 64; // Upper 64 bits
-        };
-        struct{
-            uint32_t el0 : 21;
-            uint32_t el1 : 21;
-            uint32_t el2 : 22;
-            uint32_t el3 : 21;
-            uint32_t el4 : 21;
-            uint32_t el5 : 22;
-        };
+        struct __attribute__((packed)) Packed192 {
+            uint32_t el0 : 32;
+            uint32_t el1 : 32;
+            uint32_t el2 : 32;
+            uint32_t el3 : 32;
+            uint32_t el4 : 32;
+            uint32_t el5 : 32;
+        } packed;
+        uint32_t arr[6];
     };
 
     // Constructor
-    Z2_Array(__uint128_t data_ = 0) : data(data_) {}
+    Z2_Array() : arr{0, 0, 0, 0, 0, 0} {}
 
-    // Setter for the 6 components
-    void set_component(int index, const Z2& value) {
-        switch(index) {
-            case 0: el0 = value.data; return;
-            case 1: el1 = value.data; return;
-            case 2: el2 = value.data; return;
-            case 3: el3 = value.data; return;
-            case 4: el4 = value.data; return;
-            case 5: el5 = value.data; return;
-            default: throw std::out_of_range("Index out of range");
-        }
+    // Access elements
+    uint32_t& operator[](size_t index) {
+        return arr[index];
     }
 
-    // Method to get a Z2 element at a specific index
-    Z2 get_element(int index) const {
-        switch(index) {
-            case 0: return Z2(el0);
-            case 1: return Z2(el1);
-            case 2: return Z2(el2);
-            case 3: return Z2(el3);
-            case 4: return Z2(el4);
-            case 5: return Z2(el5);
-            default: throw std::out_of_range("Index out of range");
-        }
+    const uint32_t& operator[](size_t index) const {
+        return arr[index];
     }
 
-    // Method to set a Z2 element at a specific index
-    void set_element(int index, const Z2& value) {
-        switch(index) {
-            case 0: el0 = value.data; break;
-            case 1: el1 = value.data; break;
-            case 2: el2 = value.data; break;
-            case 3: el3 = value.data; break;
-            case 4: el4 = value.data; break;
-            case 5: el5 = value.data; break;
-            default: throw std::out_of_range("Index out of range");
-        }
+    // Size of the array
+    constexpr size_t size() const {
+        return 6;
     }
 
-    // Method to access the array data as a reinterpreted Z2 array
-    Z2* as_Z2_array() {
-        return reinterpret_cast<Z2*>(&data);
-    }
-
-    const Z2* as_Z2_array() const {
-        return reinterpret_cast<const Z2*>(&data);
-    }
-
-    // Addition-assignment operator
-    Z2_Array& operator+=(const Z2_Array& other) {
-        auto* this_data = as_Z2_array();
-        auto* other_data = other.as_Z2_array();
-        for (int i = 0; i < 6; ++i) {
-            this_data[i] += other_data[i];
-        }
-        return *this;
-    }
-
-    // Subtraction-assignment operator
-    Z2_Array& operator-=(const Z2_Array& other) {
-        auto* this_data = as_Z2_array();
-        auto* other_data = other.as_Z2_array();
-        for (int i = 0; i < 6; ++i) {
-            this_data[i] -= other_data[i];
-        }
-        return *this;
-    }
-
-    // Multiplication-assignment operator
-    Z2_Array& operator*=(const Z2_Array& other) {
-        auto* this_data = as_Z2_array();
-        auto* other_data = other.as_Z2_array();
-        for (int i = 0; i < 6; ++i) {
-            this_data[i] *= other_data[i];
-        }
-        return *this;
-    }
-
-    // Addition operator
-    Z2_Array operator+(const Z2_Array& other) const {
-        Z2_Array result = *this;
-        result += other;
-        return result;
-    }
-
-    // Subtraction operator
-    Z2_Array operator-(const Z2_Array& other) const {
-        Z2_Array result = *this;
-        result -= other;
-        return result;
-    }
-
-    // Multiplication operator
-    Z2_Array operator*(const Z2_Array& other) const {
-        Z2_Array result = *this;
-        result *= other;
-        return result;
-    }
-
-    // Negation operator
-    Z2_Array operator-() const {
-        Z2_Array result;
-        auto* this_data = as_Z2_array();
-        auto* result_data = result.as_Z2_array();
-        for (int i = 0; i < 6; ++i) {
-            result_data[i] = -this_data[i];
-        }
-        return result;
-    }
-
-    // Equality operator
+    // Equality operators
     bool operator==(const Z2_Array& other) const {
-        return data == other.data;
+        for (size_t i = 0; i < size(); ++i) {
+            if (arr[i] != other.arr[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    // Three-way comparison operator
-    std::strong_ordering operator<=>(const Z2_Array& other) const {
-        return data <=> other.data;
+    bool operator!=(const Z2_Array& other) const {
+        return !(*this == other);
     }
 
-    // Stream insertion operator for printing
-    friend std::ostream& operator<<(std::ostream& os, const Z2_Array& arr) {
-        auto* arr_data = arr.as_Z2_array();
+    // Stream output
+    friend std::ostream& operator<<(std::ostream& os, const Z2_Array& array) {
         os << "[";
-        for(int i = 0; i < 6; i++) {
-            os << arr_data[i];
-            if(i < 5) os << ", ";
+        for (size_t i = 0; i < array.size(); ++i) {
+            os << array.arr[i];
+            if (i < array.size() - 1) {
+                os << ", ";
+            }
         }
         os << "]";
         return os;
     }
+
+    // Hash function
+    friend struct std::hash<Z2_Array>;
 };
 
 namespace std {
     template <>
     struct hash<Z2_Array> {
-        size_t operator()(const Z2_Array& arr) const {
-            return std::hash<uint16_t>()(arr.low) ^ (std::hash<uint64_t>()(arr.high) << 1);
+        size_t operator()(const Z2_Array& array) const {
+            size_t hash_value = 0;
+            for (size_t i = 0; i < array.size(); ++i) {
+                hash_value ^= std::hash<uint32_t>()(array.arr[i]) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
+            }
+            return hash_value;
         }
     };
 }
+
 #endif // Z2_Array_HPP
