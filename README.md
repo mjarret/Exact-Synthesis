@@ -1,64 +1,84 @@
-# Exact Synthesis Codebase
+# Exact-Synthesis
 
-## Overview
-This repository contains the code for exact quantum circuit synthesis on 2 qubit Clifford+T circuits. The core of the project is implemented in C++, featuring various classes, algorithms, and utility scripts for compiling circuits, analyzing results, and testing. 
+Exact-Synthesis is a C++20 project for generating and analyzing 6×6 matrices over Z[√2] (SO6) under T‑operator products. It builds layered lookup tables (LUTs) by T‑depth, with parallel generation and compact finalization.
 
-## File Structure
-- **Source Code**
-  - `main.cpp`: The main entry point for running the synthesis algorithm.
-  - `Globals.cpp/.hpp`, `SO6.cpp/.hpp`, `Z2.cpp/.hpp`, `pattern.cpp/.hpp`, `utils.hpp`: Core source and header files defining the main classes and algorithms used for synthesis.
-- **Makefiles**
-  - `Makefile`: Used for compiling the code. Adjust this as needed for your environment.
-- **Data**
-  - `data/`: Contains data files (`.dat`) used for testing and analysis.
+- Language: C++20
+- Parallelism: Intel oneTBB
+- Build: Makefile (g++)
+- UI: Lightweight CLI (header‑only cxxopts shim)
+- Progress: Trimmed, vendored indicators (MIT) with terminal bars
 
-## Prerequisites
-- A C++ compiler (GCC recommended)
-- `make` utility
-- C++17 or later
-- Non-standard libraries:
-  - Boost (for various utilities)
-  - TBB
-  - Benchmark
+## Quick Start
 
-## Installation
-1. Clone the repository:
-   ```sh
-   git clone https://github.com/yourusername/Exact-Synthesis.git
-   ```
-2. Navigate into the project directory:
-   ```sh
-   cd Exact-Synthesis
-   ```
-3. Build the project using `make`:
-   ```sh
-   make
-   ```
-4. Ensure that there is a directory `data`:
-   ```sh
-   mkdir data
-   ```
+Requirements
+- g++ with C++20
+- oneTBB development libraries (e.g., `sudo apt install -y libtbb-dev`)
 
-## Running the Code
-After building the project, you can run it using:
-
-```sh
-./main.out
+Build
+```
+make
+```
+Run
+```
+./main.out --help
+```
+Example
+```
+./main.out -t 8 -s 4 -n max
 ```
 
-## Usage
-- The core functionality revolves around exact synthesis algorithms using C++ classes defined in the source files.
-- The `data` directory contains necessary input data that the algorithms use.
+## CLI Options
+The CLI is defined in `src/Globals.cpp` and supports:
 
-To contribute:
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature-branch`).
-3. Commit your changes (`git commit -m 'Add new feature'`).
-4. Push to the branch (`git push origin feature-branch`).
-5. Open a pull request.
+- `-h, --help`                     Show help
+- `-t, --tcount <int>`             Target T count (default: 8)
+- `-s, --stored_depth <int>`       Maximum stored depth (default: 0; auto‑adjusted in configure)
+- `-f, --pattern_file <path>`      Pattern file (optional)
+- `-n, --threads <N|max>`          Number of threads or `max` (default: hardware_concurrency-1)
+- `-r, --root <string>`            Root circuit string (optional)
+- `-c, --cases`                    Flag for specific cases (not used; prints mode)
 
-## License
-This project is licensed under [LICENSE] (please replace with the appropriate license if available).
+Notes
+- `stored_depth` is normalized in `Globals::configure()` to `[ceil(tcount/2), tcount-1]`.
+- When `--threads max` is given, the app uses all hardware threads. Otherwise parses an integer.
 
-## Acknowledgments
-- Special thanks to contributors and those who provided support for the research and development of this project.
+## Repository Layout
+- `apps/`          Executables (entrypoints)
+- `include/`       Public headers
+  - `so6/`         SO6 core (`SO6.hpp`, `LUT.hpp`, `Signatures.inl`)
+  - `policy/`      Hash policy (`HashPolicy.hpp`)
+  - `ds/`          Data structures (SmallFreqMap, Perm6)
+  - `iter/`        Iterators for SO6
+  - `util/`        Progress tracker and I/O helpers (uses trimmed indicators)
+  - `sys/`         Memory helpers
+  - `third_party/` Header‑only CLI shim (cxxopts)
+- `src/`           Implementations (`SO6.cpp`, `algo/*.cpp`)
+- `tests/`         Small tests/bench helpers
+- `docs/`          Architecture and code map
+- `tools/`         Maintenance scripts
+
+## Build Targets
+- `make`               Build `main.out`
+- `make clean`         Remove objects and binary
+- `make debug`         Build with `-g` and link with `-ltcmalloc` (if installed)
+- `make asan`          Build with AddressSanitizer
+- `make ubsan`         Build with UBSan
+- `make docs`          Generate Doxygen docs (if `doxygen` is installed)
+
+## Performance & Memory
+- Generation uses `tbb::parallel_for_each` and a per‑layer working set; finalization compacts into a `robin_hood::unordered_flat_set` to reduce memory overhead.
+- Progress bars show elapsed/remaining time and process RSS.
+
+## Third‑Party and Licensing
+- Indicators (MIT) reduced to required parts; see `include/indicators/NOTICE` and `include/indicators/LICENSE`.
+- termcolor (BSD) and Unicode wcwidth (Markus Kuhn) are included under their original notices; see `include/indicators/*`.
+- CLI uses a lightweight, vendored `cxxopts.hpp` shim (`include/third_party/cxxopts.hpp`).
+
+## Contributing
+See `CONTRIBUTING.md` for guidelines, style, and workflow.
+
+## Troubleshooting
+- oneTBB missing: `fatal error: tbb/...` → `sudo apt install -y libtbb-dev`
+- Link errors on Linux: ensure `-ltbb` is available and the library path is discoverable.
+- Progress bars misaligned: check terminal width reporting and fonts; disable if needed in `util/progress_tracker.hpp`.
+
