@@ -1,0 +1,24 @@
+This directory contains a reduced copy of the "indicators" C++ progress bar library.
+
+Upstream project: https://github.com/p-ranav/indicators
+License: MIT
+Authors: p-ranav and contributors (see upstream project for full list)
+
+Files retained here (trimmed):
+- progress_bar.hpp
+- dynamic_progress.hpp
+- setting.hpp
+- color.hpp
+- font_style.hpp
+- progress_type.hpp
+- terminal_size.hpp
+- termcolor.hpp (third-party dependency, BSD-licensed by Ihor Kalnytskyi)
+- display_width.hpp (includes the Unicode wcwidth implementation by Markus Kuhn)
+- details/stream_helper.hpp
+
+Third‑party components included by indicators:
+- termcolor (BSD) by Ihor Kalnytskyi — https://github.com/ikalnytskyi/termcolor
+- Unicode wcwidth/wcswidth by Markus Kuhn — permission notice included in display_width.hpp
+
+This redistribution preserves the original license headers present in individual files
+(see setting.hpp and display_width.hpp) and includes the full MIT license text in LICENSE.
