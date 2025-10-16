@@ -14,7 +14,7 @@
 #include <csignal>
 #include "config/Globals.hpp"
 #include "so6/SO6.hpp"
-#include "so6/LUT.hpp" // Ensure this header file defines the LUT class
+#include "so6/graph/LUT.hpp" // Rooted SO6 BFS/LUT
 #include "util/io_utils.hpp"
 #include "algo/Generate.hpp"
 

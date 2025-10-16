@@ -33,7 +33,7 @@ This index lists the primary headers and sources by topic to reduce time spent h
 ## Storage & Lookup
 
 - Layered lookup table (finalized layers + working set):
-  - `include/so6/LUT.hpp`
+  - `include/so6/graph/LUT.hpp`
 
 ## Utilities
 

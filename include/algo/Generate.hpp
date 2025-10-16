@@ -5,7 +5,7 @@
 #include <util/progress_tracker.hpp>
 
 #include "so6/SO6.hpp"
-#include "so6/LUT.hpp"
+#include "so6/graph/LUT.hpp"
 
 namespace algo {
 

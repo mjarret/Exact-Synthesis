@@ -25,7 +25,7 @@ This document orients you to the major modules, files, and responsibilities in t
   - Experimental/aux DS live under `include/ds/` and are not wired into production paths.
 
 - Storage & Lookup
-  - `include/so6/LUT.hpp` (layered lookup table by T‑depth, finalized layers + working set)
+  - `include/so6/graph/LUT.hpp` (rooted BFS by T‑depth, finalized layers + working set)
 
 - Utilities
   - `include/util/utils.hpp` (lexicographic compare + sign masks)
@@ -65,4 +65,4 @@ This document orients you to the major modules, files, and responsibilities in t
 - Looking for canonicalization: `src/algo/Canonicalizer.cpp`.
 - Looking for row/col permutations or ranks: `include/ds/Perm6*.hpp`.
 - Looking for hashing: `include/policy/HashPolicy.hpp`, `include/so6/Signatures.inl`.
-- Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/so6/LUT.hpp`.
+- Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/so6/graph/LUT.hpp`.

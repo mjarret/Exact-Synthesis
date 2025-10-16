@@ -45,7 +45,8 @@ Notes
 ## Repository Layout
 - `apps/`          Executables (entrypoints)
 - `include/`       Public headers
-  - `so6/`         SO6 core (`SO6.hpp`, `LUT.hpp`, `Signatures.inl`)
+  - `so6/`         SO6 core (`SO6.hpp`, `Signatures.inl`)
+  - `so6/graph/`   Rooted BFS/LUT (`LUT.hpp`)
   - `policy/`      Hash policy (`HashPolicy.hpp`)
   - `ds/`          Data structures (SmallFreqMap, Perm6)
   - `iter/`        Iterators for SO6
