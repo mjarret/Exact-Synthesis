@@ -21,7 +21,7 @@ This document orients you to the major modules, files, and responsibilities in t
 
 - Data Structures (ds)
   - `include/ds/SmallFreqMap.hpp` (fixed‑capacity freq map for rows/cols)
-  - `include/ds/Perm6.hpp` (packed 6‑perm), `include/ds/Perm6Enum.hpp` (rank/unrank + table)
+  - `include/ds/Lehmer6.hpp` (rank‑encoded 6‑perm in 10 bits)
   - Experimental/aux DS live under `include/ds/` and are not wired into production paths.
 
 - Storage & Lookup
@@ -63,6 +63,6 @@ This document orients you to the major modules, files, and responsibilities in t
 
 - Looking for matrix math / multiplication: `src/SO6.cpp`.
 - Looking for canonicalization: `src/algo/Canonicalizer.cpp`.
-- Looking for row/col permutations or ranks: `include/ds/Perm6*.hpp`.
+- Looking for row/col permutations or ranks: `include/ds/Lehmer6.hpp`.
 - Looking for hashing: `include/policy/HashPolicy.hpp`, `include/so6/Signatures.inl`.
 - Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/so6/graph/LUT.hpp`.

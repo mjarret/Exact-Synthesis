@@ -13,9 +13,9 @@ constexpr auto Greater = std::strong_ordering::greater;
  * Basic constructor. Initializes Zero matrix.
  *
  */
-SO6::SO6() : arr{Z2(static_cast<uint32_t>(0))}
+SO6::SO6()
 {
-    for(int i = 1; i < 36; i++) {arr[i] = Z2(static_cast<uint32_t>(0));}
+    // Packed buffer already zero-initialized via in-class initializer in header for arr24_.
 }
 
 // SO6Lite conversions removed in this build
@@ -25,11 +25,15 @@ const SO6& SO6::identity() {
         SO6 temp;
         for (int k = 0; k < 6; k++) {
             // reserve() was a no-op for SmallFreqMap; removed for micro-optimization
-            temp.arr[(k << 2) + (k << 1) + k] = Z2(1, 0, 0);
+            temp.set_element(static_cast<uint8_t>(k), static_cast<uint8_t>(k), Z2(1, 0, 0));
+            #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
             temp.row_frequency[k][Z2(1, 0, 0)] = 1;
             temp.row_frequency[k][Z2(0, 0, 0)] = 5;
+            #endif
+            #if (EXACT_FREQ_NONE == 0)
             temp.col_frequency[k][Z2(1, 0, 0)] = 1;
             temp.col_frequency[k][Z2(0, 0, 0)] = 5;
+            #endif
         }
         temp.canonical_form();
         temp.last_T = 15;
@@ -53,12 +57,15 @@ SO6 SO6::operator*(const SO6 &other) const
     {
         for (int k = 0; k < 6; ++k)
         {
-            const Z2& left_element = get_element(row,k);
+            const Z2 left_element = get_element(static_cast<uint8_t>(row), static_cast<uint8_t>(k));
             if (left_element.int_c == 0) continue;
             for (int col = 0; col < 6; ++col)
             {
-                if((other.get_element(k,col)).int_c == 0) continue;
-                prod.get_element(row,col) += (left_element * other.get_element(k,col));
+                Z2 right_element = other.get_element(static_cast<uint8_t>(k), static_cast<uint8_t>(col));
+                if (right_element.int_c == 0) continue;
+                Z2 cur = prod.get_element(static_cast<uint8_t>(row), static_cast<uint8_t>(col));
+                cur += (left_element * right_element);
+                prod.set_element(static_cast<uint8_t>(row), static_cast<uint8_t>(col), cur);
             }
         }
     }
@@ -106,17 +113,88 @@ SO6 SO6::left_multiply_by_T(const uint8_t i) const
  */
 
 
-bool SO6::is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm, const uint16_t sign_perm) {
-    for(int col = 0; col < 6; col++) {
-        auto current = get_column(col, Row, Col);
-        auto new_col = get_column(col, row_perm, col_perm);
-        auto comparison = utils::lex_order(current, new_col, sign_convention, sign_perm);
+bool SO6::is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm, const uint16_t sign_perm) {
+    // Decode only for comparison: build raw arrays via operator[] for both current and candidate perms
+    uint8_t cur_row_a[6];
+    uint8_t cur_col_a[6];
+    uint8_t cand_row_a[6];
+    uint8_t cand_col_a[6];
+    for (int i = 0; i < 6; ++i) {
+        // Decode current and candidate from Lehmer via operator[]
+        cur_row_a[i]  = row_perm_lh_[i];
+        cur_col_a[i]  = col_perm_lh_[i];
+        cand_row_a[i] = row_perm[i];
+        cand_col_a[i] = col_perm[i];
+    }
 
+    struct ArrayColIter {
+        const SO6& s;
+        const uint8_t* row;   // size 6
+        const uint8_t* col;   // size 6
+        int col_idx;          // 0..5
+        int i;                // 0..6
+        Z2 operator*() const {
+            const int c = col ? col[col_idx] : col_idx;
+            const int r = row ? row[i] : i;
+            ASSUME(unsigned(c) < 6u);
+            ASSUME(unsigned(r) < 6u);
+            return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c));
+        }
+        ArrayColIter& operator++() { ++i; return *this; }
+        bool operator!=(const ArrayColIter& other) const { return i != other.i; }
+    };
+
+    for (int col = 0; col < 6; ++col) {
+        ArrayColIter cur_begin{*this, cur_row_a, cur_col_a, col, 0};
+        ArrayColIter cur_end  {*this, cur_row_a, cur_col_a, col, 6};
+        ArrayColIter cand_begin{*this, cand_row_a, cand_col_a, col, 0};
+        ArrayColIter cand_end  {*this, cand_row_a, cand_col_a, col, 6};
+        auto comparison = utils::lex_order(cur_begin, cur_end, cand_begin, cand_end, sign_convention, sign_perm);
         if (comparison == Equal) continue;
         return comparison == Greater;
     }
     return false;
 }
+
+bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col, const uint16_t sign_perm) {
+    // Decode current from Lehmer once for comparison
+    uint8_t cur_row_a[6];
+    uint8_t cur_col_a[6];
+    for (int i = 0; i < 6; ++i) {
+        cur_row_a[i] = row_perm_lh_[i];
+        cur_col_a[i] = col_perm_lh_[i];
+    }
+
+    struct ArrayColIter {
+        const SO6& s;
+        const uint8_t* row;   // size 6
+        const uint8_t* col;   // size 6
+        int col_idx;          // 0..5
+        int i;                // 0..6
+        Z2 operator*() const {
+            const int c = col ? col[col_idx] : col_idx;
+            const int r = row ? row[i] : i;
+            ASSUME(unsigned(c) < 6u);
+            ASSUME(unsigned(r) < 6u);
+            return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c));
+        }
+        ArrayColIter& operator++() { ++i; return *this; }
+        bool operator!=(const ArrayColIter& other) const { return i != other.i; }
+    };
+
+    for (int col = 0; col < 6; ++col) {
+        ArrayColIter cur_begin{*this, cur_row_a, cur_col_a, col, 0};
+        ArrayColIter cur_end  {*this, cur_row_a, cur_col_a, col, 6};
+        ArrayColIter cand_begin{*this, cand_row, cand_col, col, 0};
+        ArrayColIter cand_end  {*this, cand_row, cand_col, col, 6};
+        auto comparison = utils::lex_order(cur_begin, cur_end, cand_begin, cand_end, sign_convention, sign_perm);
+        if (comparison == Equal) continue;
+        return comparison == Greater;
+    }
+    return false;
+}
+
+// Removed fully-decoded overload (not used)
 
 /**
  * @brief Computes the row equivalence classes for the SO6 object.
@@ -139,15 +217,43 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
     // return comp;
 
     if (comp == Equal) {   
-        for (int col = 0; col < 5; ++col)
-        {
-            auto first_iterator_pair = get_column(col, Row, Col);
-            auto other_iterator_pair = other.get_column(col, other.Row, other.Col);
+        // Decode only for comparison from Lehmer6: build raw arrays via operator[]
+        uint8_t this_row_a[6];
+        uint8_t this_col_a[6];
+        uint8_t other_row_a[6];
+        uint8_t other_col_a[6];
+        for (int i = 0; i < 6; ++i) {
+            this_row_a[i]  = row_perm_lh_[i];
+            this_col_a[i]  = col_perm_lh_[i];
+            other_row_a[i] = other.row_perm_lh_[i];
+            other_col_a[i] = other.col_perm_lh_[i];
+        }
 
-            std::strong_ordering result = utils::lex_order(first_iterator_pair, other_iterator_pair, sign_convention, other.sign_convention);
-            if(result != Equal) {
-                return result;
+        struct ArrayColIter {
+            const SO6& s;
+            const uint8_t* row;   // size 6
+            const uint8_t* col;   // size 6
+            int col_idx;          // 0..5 (unpermuted column index)
+            int i;                // 0..6 (row step)
+            Z2 operator*() const {
+                const int c = col ? col[col_idx] : col_idx;
+                const int r = row ? row[i] : i;
+                ASSUME(unsigned(c) < 6u);
+                ASSUME(unsigned(r) < 6u);
+                return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c)); // c*6 + r
             }
+            ArrayColIter& operator++() { ++i; return *this; }
+            bool operator!=(const ArrayColIter& other) const { return i != other.i; }
+        };
+
+        for (int col = 0; col < 5; ++col) {
+            ArrayColIter a_begin{*this, this_row_a, this_col_a, col, 0};
+            ArrayColIter a_end  {*this, this_row_a, this_col_a, col, 6};
+            ArrayColIter b_begin{other, other_row_a, other_col_a, col, 0};
+            ArrayColIter b_end  {other, other_row_a, other_col_a, col, 6};
+
+            auto result = utils::lex_order(a_begin, a_end, b_begin, b_end, sign_convention, other.sign_convention);
+            if (result != Equal) return result;
         }
     }
     return  comp;

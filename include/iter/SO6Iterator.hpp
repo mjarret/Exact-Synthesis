@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <iterator>
 #include "Z2.hpp"
+#include "util/assume.hpp"
 
 class SO6::Iterator {
     public:
@@ -13,10 +14,12 @@ class SO6::Iterator {
 
 
         // Dereference operator to get the current element based on Row and Col permutation
-        const Z2& operator*() const {
+        Z2 operator*() const {
             int row_index = (Row_ != nullptr) ? Row_[index_ % 6] : index_ % 6;
             int col_index = (Col_ != nullptr) ? Col_[index_ / 6] : index_ / 6;
-            return so6_.arr[(col_index << 2) + (col_index << 1) + row_index];
+            ASSUME(static_cast<unsigned>(row_index) < 6u);
+            ASSUME(static_cast<unsigned>(col_index) < 6u);
+            return so6_.get_element(static_cast<uint8_t>(row_index), static_cast<uint8_t>(col_index));
         }
 
         // Increment

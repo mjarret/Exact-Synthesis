@@ -29,7 +29,11 @@ std::string root_string ="";
 uint8_t target_T_count = 8;            
 uint8_t stored_depth_max = 255;
 uint8_t num_gen_sets = 1;
+bool verbose = false;
 bool cases_flag = false;
+bool suppress_indicators = false;
+bool log_scaling = false;
+bool plot_scaling = false;
 
 void Globals::setParameters(int argc, char *argv[]) {
     try {
@@ -38,7 +42,10 @@ void Globals::setParameters(int argc, char *argv[]) {
         int stored_depth_param = 0;
         std::string threads_s = std::to_string(std::max(1u, std::thread::hardware_concurrency() - 1));
         bool verbose_flag = false;
+        bool no_indicators_flag = false;
         std::string root_s;
+        bool log_scaling_flag = false;
+        bool plot_scaling_flag = false;
 
         cxxopts::Options desc("Exact-Synthesis", "Exact-Synthesis options");
         desc.add_options()
@@ -50,6 +57,9 @@ void Globals::setParameters(int argc, char *argv[]) {
             ("n,threads", "number of threads (number or 'max')", cxxopts::value<std::string>(threads_s))
             ("r,root", "search tree root circuit string", cxxopts::value<std::string>(root_s))
             ("c,cases", "looking for specific cases (not used)", cxxopts::value<bool>(cases_flag))
+            ("no-indicators", "suppress interactive progress indicators", cxxopts::value<bool>(no_indicators_flag))
+            ("log-scaling", "write scaling CSV at end (scaling.csv)", cxxopts::value<bool>(log_scaling_flag))
+            ("plot-scaling", "generate scaling plots with gnuplot (requires gnuplot)", cxxopts::value<bool>(plot_scaling_flag))
         ;
 
         auto result = desc.parse(argc, argv);
@@ -77,8 +87,11 @@ void Globals::setParameters(int argc, char *argv[]) {
             }
         }
 
-        // unused global currently, but keep behavior
-        (void)verbose_flag; // suppress unused warning if not used elsewhere
+        // runtime flags
+        suppress_indicators = no_indicators_flag;
+        log_scaling = log_scaling_flag;
+        plot_scaling = plot_scaling_flag;
+        verbose = verbose_flag;
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
@@ -98,32 +111,6 @@ void Globals::configure()
         THREADS = 1;
     }
 
-    // Output configuration
-    std::cout << "[Config] Generating up to T=" << (int) target_T_count << ".\n";
-    std::cout << "[Config] Storing at most T=" << (int) stored_depth_max << " in memory.\n";
-    std::cout << "[Config] Running on " << (int) THREADS << " threads.\n";
-    if (!pattern_file.empty()) {
-        std::cout << "[Config] Searching for patterns in file " << pattern_file << "\n";
-    } else {
-        std::cout << "[Config] No pattern file.\n";
-    }
-
-    if (!case_file.empty()) {
-        std::cout << "[Config] Cases file " << case_file << "\n";
-        cases_flag=true;
-    } 
-
-    if (root_string.empty()) {
-        // root = SO6::identity();
-        std::cout << "[Config] No root specified. Using identity.\n";
-    } else {
-        // root = SO6::reconstruct_from_circuit_string(root_string);
-        std::cout << "[Config] Root specified: " << root_string << "\n";
-    }
-
-    if (cases_flag) {
-        std::cout << "[Config] Looking for specific cases.\n";
-    } else {
-        std::cout << "[Config] Looking for all cases.\n";
-    }
+    // No direct stdout here; a consolidated configuration summary
+    // is printed at program start in apps/main.cpp.
 }

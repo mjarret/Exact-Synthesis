@@ -12,8 +12,9 @@ HDR_EXTS = {".h", ".hpp", ".hh", ".hxx", ".inl"}
 SRC_EXTS = {".c", ".cc", ".cpp", ".cxx"}
 
 DEFAULT_EXCLUDE_DIRS = {
-    ".git", "backup", "docs", "benchmarks", "include/boost", "include/tbb",
-    "include/indicators", "include/indicators/details"
+    ".git", "backup", ".backup", "docs", "benchmarks",
+    "include/boost", "include/tbb", "include/indicators", "include/indicators/details",
+    "include/third_party"
 }
 
 def load_compile_commands(cc_path: Path):
@@ -36,10 +37,14 @@ def discover_all_files(root: Path):
         rel = Path(dirpath).relative_to(root)
         # skip excluded dirs
         skip = False
+        rel_s = str(rel)
         for ex in DEFAULT_EXCLUDE_DIRS:
-            if str(rel).startswith(ex):
+            if rel_s.startswith(ex):
                 skip = True
                 break
+        # Skip any hidden backup dirs like .backup-exact-*
+        if rel_s.startswith('.backup'):
+            skip = True
         if skip:
             continue
         for fn in filenames:
@@ -170,6 +175,7 @@ def main():
     ap.add_argument("--apply", action="store_true", help="Delete unused files (default: dry-run)")
     ap.add_argument("--include-tests", action="store_true", default=True, help="Keep tests as roots (default: on)")
     ap.add_argument("--include-bench", action="store_true", default=True, help="Keep benches as roots (default: on)")
+    ap.add_argument("--strict-main", action="store_true", help="Only use apps/main.cpp as root (ignore tests, benches, compile_commands)")
     ap.add_argument("--roots", nargs="*", default=[], help="Additional root files/dirs")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -178,7 +184,16 @@ def main():
     all_files = discover_all_files(root)
     all_files_set = set(all_files)
 
-    roots = collect_roots(args)
+    if args.strict_main:
+        roots = set()
+        mp = Path("apps/main.cpp")
+        if mp.exists():
+            roots.add(norm(mp))
+        # Also seed from Makefile SRC so compiled sources remain
+        for p in parse_makefile_src(Path("Makefile")):
+            roots.add(norm(p))
+    else:
+        roots = collect_roots(args)
     used = reachable_from(roots)
 
     # Any source not in compile_commands/tests/bench is unused

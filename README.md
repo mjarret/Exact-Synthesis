@@ -48,7 +48,7 @@ Notes
   - `so6/`         SO6 core (`SO6.hpp`, `Signatures.inl`)
   - `so6/graph/`   Rooted BFS/LUT (`LUT.hpp`)
   - `policy/`      Hash policy (`HashPolicy.hpp`)
-  - `ds/`          Data structures (SmallFreqMap, Perm6)
+  - `ds/`          Data structures (SmallFreqMap, Lehmer6)
   - `iter/`        Iterators for SO6
   - `util/`        Progress tracker and I/O helpers (uses trimmed indicators)
   - `sys/`         Memory helpers
@@ -67,8 +67,57 @@ Notes
 - `make docs`          Generate Doxygen docs (if `doxygen` is installed)
 
 ## Performance & Memory
-- Generation uses `tbb::parallel_for_each` and a per‑layer working set; finalization compacts into a `robin_hood::unordered_flat_set` to reduce memory overhead.
+- Generation uses `tbb::parallel_for_each` and a per‑layer working set; finalization compacts into a hash set.
 - Progress bars show elapsed/remaining time and process RSS.
+
+## Hash Backend Selection
+
+### Installed vs. vendored
+- Vendored in-tree: robin_hood (include/robin_hood.h), ankerl (include/third_party/ankerl/unordered_dense.h), phmap (include/third_party/parallel_hashmap).
+- System-installed via apt: Abseil (libabsl-dev), Folly (libfolly-dev).
+- Boost is usually present as headers (libboost-dev).
+
+### Installing Abseil/Folly (Ubuntu)
+Run: 
+
+	tools/install/install_backends.sh
+
+Or manually:
+
+	sudo apt-get update -y
+	sudo apt-get install -y libabsl-dev libfolly-dev
+
+Make will pick up Abseil via pkg-config automatically when BACKEND=absl.
+Finalized tables use a pluggable hash container selected at compile time via `include/ds/hash_containers.hpp`.
+
+- Default: vendored `robin_hood::unordered_flat_set` (50% max load factor via template param).
+- Alternate backends (header‑detected, fallback safe):
+  - `absl`     → `absl::flat_hash_set`
+  - `folly`    → `folly::F14FastSet`
+  - `boost`    → `boost::unordered_set`
+  - `ankerl`   → `ankerl::unordered_dense::set`
+  - `phmap`    → `phmap::flat_hash_set`
+
+Build selection (Makefile variable):
+```
+# defaults to robin_hood
+make
+
+# choose a backend; falls back to robin_hood if headers are missing
+make BACKEND=phmap
+make BACKEND=boost
+make BACKEND=folly
+
+# add include paths if needed
+make BACKEND=phmap EXTRA_INCLUDE="-I/path/to/phmap/include"
+
+# add extra compiler flags if needed
+make BACKEND=ankerl EXTRA_CXXFLAGS="-I/path/to/ankerl/include"
+```
+
+Notes
+- Missing headers: the wrapper automatically falls back to `robin_hood` and emits a compile‑time warning, so builds keep working even if a backend isn’t installed.
+- Linking: some backends (notably Abseil and Folly) may require linking additional libraries on your system. If you select such a backend and see link errors, either add the required libs via `LDFLAGS+=...` or build with `BACKEND=robin_hood`.
 
 ## Third‑Party and Licensing
 - Indicators (MIT) reduced to required parts; see `include/indicators/NOTICE` and `include/indicators/LICENSE`.

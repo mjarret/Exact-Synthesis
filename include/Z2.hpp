@@ -10,20 +10,19 @@
 #define bits_for_numerator 16
 #define bits_for_int_c (bits_for_numerator/2)
 #define bits_for_sqrt2_c (bits_for_numerator/2)
-#define bits_for_denom_exp 16
+#define bits_for_denom_exp 8
 #define axis (1<<bits_for_int_c)
 #define int_c_mask (axis-1)
 #define numerator_mask ((1<<bits_for_numerator)-1)
 #define sqrt2_c_mask (numerator_mask&(~int_c_mask))
 
+// Swap roles of int_c and sqrt2_c within the packed numerator field by
+// swapping the lower and upper halves (width = bits_for_int_c).
+// Use fast builtin for the 16-bit case; fall back to mask/shift otherwise.
 #if bits_for_numerator == 16
-    #define BYTE_SWAP(val) (__builtin_bswap16(val))
-#elif bits_for_numerator == 32
-    #define BYTE_SWAP(val) (__builtin_bswap32(val))
-#elif bits_for_numerator == 64
-    #define BYTE_SWAP(val) (__builtin_bswap64(val))
+  #define BYTE_SWAP(val) (__builtin_bswap16(val))
 #else
-    #define BYTE_SWAP(val) (((val & int_c_mask) << bits_for_int_c) | ((val & sqrt2_c_mask) >> bits_for_int_c))
+  #define BYTE_SWAP(val) (((val & int_c_mask) << bits_for_int_c) | ((val & sqrt2_c_mask) >> bits_for_int_c))
 #endif
 
 
@@ -40,9 +39,9 @@ struct Z2 {
                     int8_t sqrt2_c : bits_for_sqrt2_c; ///< Upper 8 bits representing the sqrt(2) coefficient
                 };
             };
-            uint16_t denom_exp : bits_for_denom_exp; ///< Exponent of the denominator
+            uint8_t denom_exp : bits_for_denom_exp; ///< Exponent of the denominator (packed to 8 bits)
         };
-        uint32_t data; ///< Full 32-bit representation
+        uint32_t data : 24; ///< Packed 24-bit representation (16-bit numerator + 8-bit exponent)
     };
     
     /// @brief Constructor with default parameter
@@ -59,6 +58,7 @@ struct Z2 {
     /// @param sqrt2_c_ Initial sqrt(2) coefficient
     /// @param denom_exp_ Initial denominator exponent value
     constexpr Z2(uint8_t int_c_, uint8_t sqrt2_c_, uint8_t denom_exp_) : int_c(int_c_), sqrt2_c(sqrt2_c_), denom_exp(denom_exp_) {};
+
 
     //======================================================================
     // Macros for Bitwise Operations
@@ -299,6 +299,11 @@ struct Z2 {
 
     // Serialization helpers removed (unused)
 };
+
+// Runtime report: print observed maxima for Z2 fields at program end.
+namespace z2_monitor {
+    void report_usage_stats();
+}
 
 namespace std {
     /// @brief Computes the absolute value of a Z2 object

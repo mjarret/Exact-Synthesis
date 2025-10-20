@@ -27,6 +27,9 @@ extern bool verbose;
 extern bool transpose_multiply;
 extern bool explicit_search_mode;
 extern bool cases_flag;
+extern bool suppress_indicators;
+extern bool log_scaling;
+extern bool plot_scaling;
 
 /**
  * @brief Static helper for setting and validating global parameters.

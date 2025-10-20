@@ -15,25 +15,32 @@
 #include <csignal>
 #include <chrono>
 #include <tbb/concurrent_queue.h>
+#include "util/progress_tracker.hpp"
+#ifndef EXACT_DISABLE_INDICATORS
 #include <indicators/dynamic_progress.hpp>
 #include <indicators/progress_bar.hpp>
-#include "util/progress_tracker.hpp"
+#endif
 
 // Global variables for I/O handling
 namespace io_utils {
     inline std::atomic<bool> done(false);
     inline tbb::concurrent_queue<std::string> output_queue;
+    #ifndef EXACT_DISABLE_INDICATORS
     inline indicators::DynamicProgress<indicators::ProgressBar> progress_tracker;
+    #endif
 
     // Progress Tracker Functions
     inline void initialize_progress_tracker() {
+        #ifndef EXACT_DISABLE_INDICATORS
         progress_tracker.set_option(indicators::option::HideBarWhenComplete{false});
+        #endif
     }
 
     inline size_t add_job_to_tracker(int t_count) {
         std::ostringstream ss;
         ss << std::left << std::setw(7) << std::min(t_count + 1, 9999) << std::setfill(' ');
         std::string formatted_count = ss.str();
+        #ifndef EXACT_DISABLE_INDICATORS
         auto terminal_width = indicators::terminal_size().second;
         auto bar = std::make_unique<indicators::ProgressBar>(
                         indicators::option::BarWidth{terminal_width - 80},
@@ -42,13 +49,16 @@ namespace io_utils {
                         indicators::option::ShowRemainingTime{true},
                         indicators::option::PrefixText{"T= " + formatted_count},
                         indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}});
-
         return progress_tracker.push_back(std::move(bar));
+        #else
+        (void)formatted_count; return 0;
+        #endif
     }
 
     inline size_t add_matrix_tracker() {
         std::ostringstream ss;
         ss << std::setw(20) << std::setfill(' ') << " Finding Matrices: ";
+        #ifndef EXACT_DISABLE_INDICATORS
         auto terminal_width = indicators::terminal_size().second;    
         auto bar = std::make_unique<indicators::ProgressBar>(
                     indicators::option::BarWidth{terminal_width - 70},
@@ -56,21 +66,26 @@ namespace io_utils {
                     indicators::option::PrefixText{ss.str()},
                     indicators::option::FontStyles{
                 std::vector<indicators::FontStyle>{indicators::FontStyle::bold}});
-
         return progress_tracker.push_back(std::move(bar));
+        #else
+        return 0;
+        #endif
     }
 
     inline size_t add_io_tracker() {
         std::ostringstream ss;
         ss << std::setw(20) << std::setfill(' ') << " I/O Progress: ";
+        #ifndef EXACT_DISABLE_INDICATORS
         auto bar = std::make_unique<indicators::ProgressBar>(
                     indicators::option::BarWidth{40},
                     indicators::option::ForegroundColor{indicators::Color::blue},
                     indicators::option::PrefixText{ss.str()},
                     indicators::option::FontStyles{
                 std::vector<indicators::FontStyle>{indicators::FontStyle::bold}});
-
         return progress_tracker.push_back(std::move(bar));
+        #else
+        return 0;
+        #endif
     }
 
     // Threaded Output Handling
@@ -85,10 +100,12 @@ namespace io_utils {
 
     // Signal Handling
     inline void signal_handler(int signum) {
-        indicators::kill_signal_received.store(true);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
+        // Best-effort graceful shutdown of progress indicators
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         std::cout << "Interrupt signal (" << signum << ") received. Exiting..." << std::endl;
+        #ifndef EXACT_DISABLE_INDICATORS
         indicators::show_console_cursor(true);
+        #endif
         std::exit(signum);
     }
 

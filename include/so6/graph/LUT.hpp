@@ -6,8 +6,10 @@
 #define LUT_HPP
 
 #include <vector>
+#include <iomanip>
+#include <sstream>
 #include <tbb/concurrent_unordered_set.h>
-#include <robin_hood.h>
+#include "ds/hash_containers.hpp"
 #include "so6/SO6.hpp"
 
 
@@ -22,11 +24,12 @@ struct FinalizedHash32 {
     }
 };
 
-// Conservative max load factor (50%) to limit probe chains
-using finalized_set = robin_hood::unordered_flat_set<SO6, FinalizedHash32, std::equal_to<SO6>, 50>;
+// Backend-selectable finalized set
+using finalized_set = exact::hash::unordered_set<SO6, FinalizedHash32, std::equal_to<SO6>>;
 static const finalized_set empty_set;
 
 #include "sys/memory.hpp"
+#include "util/progress_tracker.hpp"
 
 /**
  * @brief Accumulates finalized SO6 sets layer-by-layer with memory-aware finalization.
@@ -44,19 +47,36 @@ public:
         size_t availableMemory = getAvailableMemory();
         size_t elementSize = sizeof(SO6);
         size_t maxElements = availableMemory / elementSize;
-        if(maxElements == 0)
-            throw std::runtime_error("Insufficient memory to store the lookup table");
+        if (maxElements == 0) throw std::runtime_error("Insufficient memory to store the lookup table");
 
+        // Batch populate the finalized set using chunked range inserts
+        const size_t total = finalSet.size();
         finalized_set robin_set;
-        lookupTable.push_back(std::move(robin_set));
-        // Reserve based on expected element count
-        lookupTable.back().reserve(finalSet.size());
+        robin_set.reserve(total);
 
         size_t count = 0;
+        if (finalize_bar) finalize_bar->set_option(indicators::option::MaxProgress{total});
+
+        // Use a reusable chunk buffer to reduce per-insert overhead while keeping progress updates
+        constexpr size_t CHUNK = 8192; // tuned for cache/bucket locality
+        std::vector<SO6> chunk; chunk.reserve(std::min(CHUNK, total));
         for (const auto& v : finalSet) {
-            lookupTable.back().insert(v);
-            if (finalize_bar) finalize_bar->set_progress(++count);
+            chunk.push_back(v);
+            if (chunk.size() == chunk.capacity()) {
+                robin_set.insert(std::make_move_iterator(chunk.begin()), std::make_move_iterator(chunk.end()));
+                count += chunk.size();
+                if (finalize_bar) finalize_bar->set_progress(count);
+                chunk.clear();
+            }
         }
+        if (!chunk.empty()) {
+            robin_set.insert(std::make_move_iterator(chunk.begin()), std::make_move_iterator(chunk.end()));
+            count += chunk.size();
+            if (finalize_bar) finalize_bar->set_progress(count);
+        }
+        lookupTable.emplace_back(std::move(robin_set));
+
+        // Release memory held by the concurrent working set
         working_set().swap(finalSet);
     }
 
@@ -65,6 +85,9 @@ public:
     void push_back(const working_set& set) { finalSet.insert(set.begin(), set.end()); }
 
     const finalized_set& current() { return lookupTable.back(); }
+
+    // Number of elements pending finalization into the LUT
+    size_t pending_size() const { return finalSet.size(); }
 
     const finalized_set& prior() const {
         if(lookupTable.size() > 1 ) return lookupTable[lookupTable.size()-2];
@@ -80,4 +103,3 @@ private:
 };
 
 #endif // LUT_HPP
-
