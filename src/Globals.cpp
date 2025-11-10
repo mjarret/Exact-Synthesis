@@ -15,25 +15,30 @@
 #include <third_party/cxxopts.hpp>
 
 // Threading and performance tracking
-uint8_t THREADS; //store maximum number of threads here
-std::chrono::high_resolution_clock::time_point tcount_init_time = std::chrono::high_resolution_clock::now();    // Initialize with current time
-std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero();                              // Initialize as zero
+uint8_t THREADS; // store maximum number of threads here
 
-// Pattern handling and search settings     
-std::string pattern_file = "";
-std::string case_file = "";
-std::string root_string ="";
-// SO6 root = SO6::identity();
+namespace {
+[[maybe_unused]] std::chrono::high_resolution_clock::time_point tcount_init_time =
+    std::chrono::high_resolution_clock::now();    // Initialize with current time
+[[maybe_unused]] std::chrono::duration<double> timeelapsed = std::chrono::duration<double>::zero(); // Initialize as zero
+
+// Pattern handling and search settings
+[[maybe_unused]] std::string pattern_file;
+[[maybe_unused]] std::string case_file;
+[[maybe_unused]] std::string root_string;
+
+// Configuration and state variables that remain local to this translation unit
+[[maybe_unused]] uint8_t num_gen_sets = 1;
+[[maybe_unused]] bool cases_flag = false;
+[[maybe_unused]] bool log_scaling = false;
+[[maybe_unused]] bool plot_scaling = false;
+} // namespace
 
 // Configuration and state variables
-uint8_t target_T_count = 8;            
+uint8_t target_T_count = 8;
 uint8_t stored_depth_max = 255;
-uint8_t num_gen_sets = 1;
 bool verbose = false;
-bool cases_flag = false;
 bool suppress_indicators = false;
-bool log_scaling = false;
-bool plot_scaling = false;
 
 void Globals::setParameters(int argc, char *argv[]) {
     try {

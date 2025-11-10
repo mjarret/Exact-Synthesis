@@ -8,16 +8,13 @@ This index lists the primary headers and sources by topic to reduce time spent h
   - Headers: `include/Z2.hpp`
   - Impl: `src/Z2.cpp`
 
-- Hashing Policy
-  - `include/policy/HashPolicy.hpp`
-  - `include/hash_types.hpp`
+- Hashing helpers live inline in `include/so6/SO6.hpp`.
 
 ## SO6 (6×6 over Z[√2])
 
 - Main class:
   - `include/so6/SO6.hpp` (API, inline helpers, frequency hash wrappers)
   - `src/SO6.cpp` (ctor, identity, operator*, operator<=>, left_multiply_by_T dispatcher)
-  - Iterators: `include/iter/SO6Iterator.hpp`
   - Inline frequency hashing: `include/so6/Signatures.inl`
 
 - Algorithms

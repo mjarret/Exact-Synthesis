@@ -9,9 +9,19 @@
 #include <iomanip>
 #include <sstream>
 #include <tbb/concurrent_unordered_set.h>
-#include "ds/hash_containers.hpp"
 #include "so6/SO6.hpp"
 
+#if defined(__has_include)
+#  define EXACT_HAS_ANKERL_UNORDERED_SET __has_include(<ankerl/unordered_dense.h>)
+#else
+#  define EXACT_HAS_ANKERL_UNORDERED_SET 0
+#endif
+
+#if EXACT_HAS_ANKERL_UNORDERED_SET
+#  include <ankerl/unordered_dense.h>
+#else
+#  include <unordered_set>
+#endif
 
 using working_set = tbb::concurrent_unordered_set<SO6>;
 
@@ -25,7 +35,11 @@ struct FinalizedHash32 {
 };
 
 // Backend-selectable finalized set
-using finalized_set = exact::hash::unordered_set<SO6, FinalizedHash32, std::equal_to<SO6>>;
+#if EXACT_HAS_ANKERL_UNORDERED_SET
+using finalized_set = ankerl::unordered_dense::set<SO6, FinalizedHash32, std::equal_to<SO6>>;
+#else
+using finalized_set = std::unordered_set<SO6, FinalizedHash32, std::equal_to<SO6>>;
+#endif
 static const finalized_set empty_set;
 
 #include "sys/memory.hpp"
@@ -43,7 +57,7 @@ public:
         lookupTable.back().insert(root);
     };
 
-    void finalize_current_set(indicators::ProgressBar* finalize_bar = nullptr) {
+    void finalize_current_set(indicators::ProgressTracker* tracker = nullptr) {
         size_t availableMemory = getAvailableMemory();
         size_t elementSize = sizeof(SO6);
         size_t maxElements = availableMemory / elementSize;
@@ -55,7 +69,8 @@ public:
         robin_set.reserve(total);
 
         size_t count = 0;
-        if (finalize_bar) finalize_bar->set_option(indicators::option::MaxProgress{total});
+        if (tracker) tracker->on_finalize_started(total);
+        indicators::ProgressBar* finalize_bar = tracker ? tracker->get_finalize_bar() : nullptr;
 
         // Use a reusable chunk buffer to reduce per-insert overhead while keeping progress updates
         constexpr size_t CHUNK = 8192; // tuned for cache/bucket locality
@@ -78,13 +93,20 @@ public:
 
         // Release memory held by the concurrent working set
         working_set().swap(finalSet);
+
+        if (tracker) {
+            tracker->on_finalize_finished();
+            // Complete the tracker with the finalized layer size
+            tracker->complete(lookupTable.back().size());
+        }
     }
 
-    size_t size() const { return lookupTable.size()+1; }
+    size_t size() const { return lookupTable.size(); }
 
     void push_back(const working_set& set) { finalSet.insert(set.begin(), set.end()); }
 
     const finalized_set& current() { return lookupTable.back(); }
+    const finalized_set& current() const { return lookupTable.back(); }
 
     // Number of elements pending finalization into the LUT
     size_t pending_size() const { return finalSet.size(); }
@@ -97,9 +119,26 @@ public:
     auto begin() { return lookupTable.begin(); }
     auto end() { return lookupTable.end(); }
 
+    auto find(const SO6& s) {
+        for (auto& layer : lookupTable) {
+            auto it = layer.find(s);
+            if (it != layer.end()) return it;
+        }
+        return lookupTable.back().end();
+    }
+
+    auto find_in_layer(const SO6& s, size_t layer_idx) {
+        auto& layer = lookupTable[layer_idx];
+        return layer.find(s);
+    }
+
+    auto &back() const { return lookupTable.back(); }
+
 private:
     std::vector<finalized_set> lookupTable = {};
     working_set finalSet;
 };
 
 #endif // LUT_HPP
+
+#undef EXACT_HAS_ANKERL_UNORDERED_SET

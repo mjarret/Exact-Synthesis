@@ -93,23 +93,10 @@ int main(int argc, char **argv)
     auto print_bool = [](const char* k, bool v){ std::cout << "  " << std::left << std::setw(22) << k << ": " << (v?"yes":"no") << "\n"; };
     auto print_u8   = [](const char* k, uint8_t v){ std::cout << "  " << std::left << std::setw(22) << k << ": " << unsigned(v) << "\n"; };
     auto freq_policy = [](){
-    #if (EXACT_FREQ_NONE==1)
+        // Frequency policy simplified: always compute on the fly.
         return "none (scan/sort-6 on the fly)";
-    #elif (EXACT_FREQ_COLS_ONLY==1)
-        return "columns-only (rows on-the-fly)";
-    #else
-        return "rows+columns (stored maps)";
-    #endif
     };
-    auto hash_backend = [](){
-    #if defined(EXACT_USE_ANKERL)
-        return "ankerl::unordered_dense";
-    #elif defined(EXACT_USE_BOOST)
-        return "boost::unordered_*";
-    #else
-        return "std::unordered_*";
-    #endif
-    };
+    auto hash_backend = [](){ return kHashBackendName; };
 
     std::cout << "=== Exact-Synthesis Configuration ===\n";
     // Build/runtime
@@ -135,8 +122,6 @@ int main(int argc, char **argv)
     // Inputs/flags
     print_bool("suppress_indicators", suppress_indicators);
     print_bool("verbose", verbose);
-    print_bool("log_scaling", log_scaling);
-    print_bool("plot_scaling", plot_scaling);
     print_u8("stored_depth_max", stored_depth_max);
     print_u8("target_T_count", target_T_count);
     std::cout << "======================================\n";
@@ -146,51 +131,12 @@ int main(int argc, char **argv)
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism,
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
-    std::vector<double> rss_by_layer_mb;                     // Capture memory per finalized layer
-    std::vector<double> per_t_time_s;                        // Runtime by T (seconds)
-    std::vector<size_t> per_t_mem_bytes;                     // Delta memory by T (bytes)
-    LUT gen_set = algo::create_lookup_table(SO6::identity(), &rss_by_layer_mb, &per_t_time_s, &per_t_mem_bytes); // Build LUT and record metrics
+    LUT gen_set = algo::create_lookup_table(SO6::identity(), nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
 
     // No additional per-layer parallel loop here; create_lookup_table already built layers.
     indicators::show_console_cursor(true);
 
-    // Optionally log scaling CSV and plot via gnuplot
-    if (log_scaling || plot_scaling) {
-        const char* csv_name = "scaling.csv";
-        // Always (re)write CSV if either flag is set
-        std::ofstream csv(csv_name, std::ios::out | std::ios::trunc);
-        csv << "T,runtime_s,delta_mem_bytes\n";
-        size_t rows = per_t_time_s.size();
-        for (size_t i = 0; i < rows; ++i) {
-            double tval = (i < per_t_time_s.size() ? per_t_time_s[i] : 0.0);
-            size_t dmem = (i < per_t_mem_bytes.size() ? per_t_mem_bytes[i] : 0);
-            csv << (i+1) << "," << std::fixed << std::setprecision(6) << tval << "," << dmem << "\n";
-        }
-        csv.close();
-
-        if (plot_scaling) {
-            const char* gp_name = "scaling.gnuplot";
-            std::ofstream gp(gp_name, std::ios::out | std::ios::trunc);
-            gp << "set datafile separator comma\n";
-            gp << "set grid\n";
-            gp << "set term pngcairo size 1200,800\n";
-            gp << "set output 'scaling.png'\n";
-            gp << "set xlabel 'T'\n";
-            gp << "set ylabel 'Runtime (s)'\n";
-            gp << "set y2label 'Delta Memory (MB)'\n";
-            gp << "set ytics nomirror\n";
-            gp << "set y2tics\n";
-            // Log scales: skip zero/negative values so gnuplot doesn't error
-            gp << "set logscale y\n";
-            gp << "set logscale y2\n";
-            // Use small epsilons so zeros still appear and the line remains connected on log axes
-            gp << "eps_rt = 1e-9\n";
-            gp << "eps_mb = 1.0/(1024.0*1024.0)\n"; // one byte in MB
-            gp << "plot '" << csv_name << "' using 1:( $2>0 ? $2 : eps_rt ) axes x1y1 with linespoints title 'Runtime (s)',\\\n";
-            gp << "     '" << csv_name << "' using 1:( ($3>0 ? ($3/1024.0/1024.0) : eps_mb) ) axes x1y2 with linespoints title 'Delta Mem (MB)'\n";
-            gp.close();
-        }
-    }
+    // Metrics (time/memory) are now handled and displayed by ProgressTracker; CSV/plot generation removed.
 
     return 0;
 }

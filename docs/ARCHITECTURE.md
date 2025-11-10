@@ -10,14 +10,11 @@ This document orients you to the major modules, files, and responsibilities in t
 
 - SO6 (6×6 matrices over Z[√2])
   - `include/so6/SO6.hpp`, `src/SO6.cpp`
-  - `include/iter/SO6Iterator.hpp` (iterator for permuted access)
   - `include/so6/Signatures.inl` (inline frequency hashing helpers)
   - Canonicalization & equivalence classes: `src/algo/Canonicalizer.cpp`
   - Generation: `src/algo/Generate.cpp`
 
-- Hashing
-  - `include/policy/HashPolicy.hpp` (policy for mixers and element hash helpers)
-  - `include/hash_types.hpp` (project‑wide hash width alias)
+- Hashing helpers are defined inline in `include/so6/SO6.hpp` (see `z_freq_hash`).
 
 - Data Structures (ds)
   - `include/ds/SmallFreqMap.hpp` (fixed‑capacity freq map for rows/cols)
@@ -51,18 +48,18 @@ This document orients you to the major modules, files, and responsibilities in t
 
 - Equality: structural on `SO6` (`std::hash<SO6>` uses `SO6::hash` as precomputed signature).
 - Ordering (`operator<=>`): compares `col_hash` first, then column‑wise lex ordering via `utils::lex_order` using `Row`/`Col` permutations and sign convention.
-- Frequency hashing (`so6/Signatures.inl`): hashes row/col frequency maps via `hashpolicy::z_freq_hash`.
+- Frequency hashing (`so6/Signatures.inl`): hashes row/col frequency maps via `SO6::z_freq_hash`.
 
 ## Key Design Choices
 
 - `SmallFreqMap` is fixed‑capacity and inline to avoid allocations in the hot path.
 - Canonicalization is isolated in `src/algo/Canonicalizer.cpp` and avoids recomputing heavy structures when signatures suffice.
-- The `policy/HashPolicy.hpp` concentrates hash mixer variants behind a single policy interface.
+- Hash mixing helpers sit directly in `SO6`, removing the need for a separate policy header.
 
 ## How to Navigate Quickly
 
 - Looking for matrix math / multiplication: `src/SO6.cpp`.
 - Looking for canonicalization: `src/algo/Canonicalizer.cpp`.
 - Looking for row/col permutations or ranks: `include/ds/Lehmer6.hpp`.
-- Looking for hashing: `include/policy/HashPolicy.hpp`, `include/so6/Signatures.inl`.
+- Looking for hashing: `include/so6/SO6.hpp` (`z_freq_hash`) and `include/so6/Signatures.inl`.
 - Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/so6/graph/LUT.hpp`.

@@ -24,17 +24,22 @@
 #include <compare>
 #include <algorithm>
 #include <initializer_list>
+#include <span>
+#include <concepts>
 #include <utility>
-#include "policy/HashPolicy.hpp"
+#include "sort/sort6.hpp"
 #include "Z2.hpp"
-#include "config/FrequencyPolicy.hpp"
-#include "ds/FrequencyTables.hpp"
+#include "ds/SmallFreqMap.hpp"
 #include "ds/Lehmer6.hpp"
 #include "ds/Order6.hpp"
-#include "ds/hash_containers.hpp"
 
-// Small non-zero prime to seed signatures for the identity element
-constexpr uint16_t prime = 0x0101;
+// Flat, stack-only table specialized for tiny n=6
+#include "ds/FlatFrequencyTable.hpp"
+
+using FrequencySignature = uint16_t;
+using FrequencyMap = SmallFreqMap;
+using FrequencyTable = ds::FlatFrequencyTable;
+inline constexpr const char* kHashBackendName = "flat";
 
 /**
  * @class SO6
@@ -63,8 +68,8 @@ public:
             struct {
                 // Index (0..14) of the most recent T_{i} left-multiplication; 15 means "none"
                 unsigned char last_T : 4;
-                // Row sign mask used for lexicographic comparisons (bit l selects sign for row l)
-                uint16_t sign_convention : 12 = 0b010101010101;
+                // Row sign mask: 1 bit per row (0 = POS, 1 = NEG); we use only 6 bits
+                uint8_t sign_convention : 6 = 0;
             };
         };
 
@@ -120,6 +125,12 @@ public:
         /// Singleton identity matrix; pre-initialized with frequencies/signatures.
         static const SO6& identity();
 
+        /// Recompute `hash` and `col_hash` from the current matrix contents.
+        /// Uses the same scheme as identity():
+        ///  - hash accumulates row_frequency_signature over rows and (col_freq ^ (col_freq>>1)) over cols
+        ///  - col_hash accumulates (col_freq ^ (col_freq>>1)) over cols
+        void recompute_hash();
+
         // ---------- Frequency helpers / equivalence classes ----------
         /// Build row equivalence classes keyed by row frequency signatures.
         FrequencyTable row_equivalence_classes();
@@ -132,112 +143,6 @@ public:
         /// Matrix multiply (this * other).
         SO6 operator*(const SO6&) const;
 
-        /// Left-multiply by T_i (runtime index 0..14).
-        SO6 left_multiply_by_T(const uint8_t) const;
-
-        /// Left-multiply by T_i (compile-time index 0..14). Mutates and returns `S`.
-        template<int i>
-        static SO6 left_multiply_by_T(SO6 &S) {
-            static_assert(i >= 0 && i < 15, "left_multiply_by_T: i out of range");
-            static constexpr std::array<std::pair<int,int>, 15> pairs{{
-                {0,1},{0,2},{0,3},{0,4},{0,5},
-                {1,2},{1,3},{1,4},{1,5},
-                {2,3},{2,4},{2,5},
-                {3,4},{3,5},
-                {4,5}
-            }};
-            constexpr int row1 = pairs[i].first;
-            constexpr int row2 = pairs[i].second;
-
-            size_t row_freq =
-            #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-                frequency_hash(S.row_frequency[row1]) + frequency_hash(S.row_frequency[row2]);
-            #else
-                row_frequency_signature(S, row1) + row_frequency_signature(S, row2);
-            #endif
-            S.hash -= row_freq;
-
-            for (int col = 0; col < 6; col++)
-            {
-                #if (EXACT_FREQ_NONE == 0)
-                auto &cf = S.col_frequency[col];
-                size_t col_freq = frequency_hash(cf);
-                #else
-                size_t col_freq = col_frequency_signature(S, col);
-                #endif
-                size_t col_sig = col_freq ^ (col_freq >> 1);
-                S.hash     -= col_sig;
-                S.col_hash -= col_sig;
-
-                Z2 a = S.get_element(row1, col);
-                Z2 b = S.get_element(row2, col);
-                const Z2 a_old = a;
-                const Z2 b_old = b;
-                Z2 a_old_abs = std::abs(a_old);
-                Z2 b_old_abs = std::abs(b_old);
-
-                // To track the column sum, begin by decreasing the size by the elements that will be modified
-                #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-                S.row_frequency[row1].decrement(a_old_abs);
-                S.row_frequency[row2].decrement(b_old_abs);
-                #endif
-                #if (EXACT_FREQ_NONE == 0)
-                cf.decrement(a_old_abs);
-                cf.decrement(b_old_abs);
-                #endif
-
-                // Update elements
-                a += b_old;
-                b -= a_old;
-                a.denom_exp += (a.int_c != 0);
-                b.denom_exp += (b.int_c != 0);
-
-                const Z2 a_abs = std::abs(a);
-                const Z2 b_abs = std::abs(b);
-
-                // Update frequencies
-                #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-                S.row_frequency[row1][a_abs]++;
-                S.row_frequency[row2][b_abs]++;
-                #endif
-                #if (EXACT_FREQ_NONE == 0)
-                cf[a_abs]++;
-                cf[b_abs]++;
-                #endif
-
-                // Write back updates
-                S.set_element(row1, col, a);
-                S.set_element(row2, col, b);
-
-                #if (EXACT_FREQ_NONE == 0)
-                col_freq = frequency_hash(cf);
-                #else
-                col_freq = col_frequency_signature(S, col);
-                #endif
-                col_sig = col_freq ^ (col_freq >> 1);
-                S.hash     += col_sig;
-                S.col_hash += col_sig;
-            }
-
-            S.canonical_form();
-            row_freq =
-            #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-                frequency_hash(S.row_frequency[row1]) + frequency_hash(S.row_frequency[row2]);
-            #else
-                row_frequency_signature(S, row1) + row_frequency_signature(S, row2);
-            #endif
-            S.hash +=  row_freq;
-            S.last_T = i;
-            return S;
-        }
-
-        // ---------- Iteration ----------
-        /// Forward declaration for column iterator (implemented in iter/SO6Iterator.hpp)
-        class Iterator;
-
-        /// Get iterators over a (possibly permuted) column.
-        std::pair<SO6::Iterator,SO6::Iterator> get_column(const uint8_t  col, const uint8_t* Row_ = nullptr, const uint8_t* Col_ = nullptr) const;
-
         // ---------- Canonicalization / comparison helpers ----------
         /// Compare using Lehmer-encoded permutations for current vs candidate.
         bool is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm, const uint16_t sign_perm);
@@ -245,53 +150,64 @@ public:
         /// Compare using raw candidate arrays; current comes from stored Lehmer.
         bool is_better_permutation(const uint8_t* row_perm, const uint8_t* col_perm, const uint16_t sign_perm);
 
+        /// Compare using contiguous views (zero-copy) for candidate permutations.
+        inline bool is_better_permutation(std::span<const uint8_t, 6> row_perm,
+                                          std::span<const uint8_t, 6> col_perm,
+                                          const uint16_t sign_perm) {
+            return is_better_permutation(row_perm.data(), col_perm.data(), sign_perm);
+        }
+
+        /// Compare using indexable, sized candidate permutations; copies 6 bytes
+        /// to bridge to the pointer fast-path. Works with std::array and custom
+        /// types exposing operator[] for indices 0..5.
+        template <class Row, class Col>
+        requires (std::convertible_to<decltype(std::declval<const Row&>()[0]), uint8_t> &&
+                  std::convertible_to<decltype(std::declval<const Row&>()[5]), uint8_t> &&
+                  std::convertible_to<decltype(std::declval<const Col&>()[0]), uint8_t> &&
+                  std::convertible_to<decltype(std::declval<const Col&>()[5]), uint8_t>)
+        inline bool is_better_permutation(const Row& cand_row,
+                                          const Col& cand_col,
+                                          const uint16_t sign_perm) {
+            uint8_t row_a[6];
+            uint8_t col_a[6];
+            for (int i = 0; i < 6; ++i) {
+                row_a[i] = static_cast<uint8_t>(cand_row[static_cast<std::size_t>(i)]);
+                col_a[i] = static_cast<uint8_t>(cand_col[static_cast<std::size_t>(i)]);
+            }
+            // Force resolution to the pointer overload, avoiding recursion
+            // back into this template for array arguments.
+            bool (SO6::*ptr_overload)(const uint8_t*, const uint8_t*, const uint16_t) = &SO6::is_better_permutation;
+            return (this->*ptr_overload)(row_a, col_a, sign_perm);
+        }
+
         /// Transform into canonical form (updates permutations and sign convention).
         void canonical_form();
         
-        // ---------- Frequency bookkeeping (exposed for benchmarks) ----------
-        /// Absolute-value frequency per row.
-        #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-        FrequencyMap row_frequency[6];
-        #endif
-        /// Absolute-value frequency per column.
-        #if (EXACT_FREQ_NONE == 0)
-        FrequencyMap col_frequency[6];
-        #endif
+        // ---------- Frequency bookkeeping ----------
+        // No stored row/column frequency maps in the simplified policy.
 
         // Helpers: compute frequency signatures by scanning entries (no stored maps)
-        static inline size_t row_frequency_signature(const SO6& s, int row) {
-            // gather abs values
-            Z2 vals[6];
-            for (int c = 0; c < 6; ++c) vals[c] = std::abs(s.get_element(row, static_cast<uint8_t>(c)));
-            // sort by raw data
-            std::sort(vals, vals + 6, [](const Z2& a, const Z2& b){ return a.data < b.data; });
-            // run-length encode and fold like frequency_hash
-            size_t acc = 0;
-            int i = 0;
-            while (i < 6) {
-                int j = i + 1;
-                while (j < 6 && vals[j].data == vals[i].data) ++j;
-                int cnt = j - i;
-                size_t h = z_freq_hash(vals[i], cnt);
-                acc += h + h * h;
-                i = j;
-            }
-            acc ^= acc >> 3;
-            acc ^= acc >> 1;
-            return acc;
+        static inline uint16_t row_frequency_signature(const SO6& s, int row) {
+            std::array<Z2, 6> vals{};
+            for (int c = 0; c < 6; ++c) vals[c] = std::abs(s.get_element(row, c));
+            return signature_from_sorted(vals);
         }
 
-        static inline size_t col_frequency_signature(const SO6& s, int col) {
-            Z2 vals[6];
-            for (int r = 0; r < 6; ++r) vals[r] = std::abs(s.get_element(static_cast<uint8_t>(r), col));
-            std::sort(vals, vals + 6, [](const Z2& a, const Z2& b){ return a.data < b.data; });
+        static inline uint16_t col_frequency_signature(const SO6& s, int col) {
+            std::array<Z2, 6> vals{};
+            for (int r = 0; r < 6; ++r) vals[r] = std::abs(s.get_element(r, col));
+            return signature_from_sorted(vals);
+        }
+
+        static inline uint16_t signature_from_sorted(std::array<Z2, 6>& vals) {
+            auto comp = [](const Z2& a, const Z2& b){ return a.data < b.data; };
+            sort6::sorting_network_dispatch(vals, comp);
             size_t acc = 0;
             int i = 0;
             while (i < 6) {
                 int j = i + 1;
                 while (j < 6 && vals[j].data == vals[i].data) ++j;
-                int cnt = j - i;
-                size_t h = z_freq_hash(vals[i], cnt);
+                size_t h = z_freq_hash(vals[i], j-i);
                 acc += h + h * h;
                 i = j;
             }
@@ -302,24 +218,26 @@ public:
 
         // ---------- Hash helpers ----------
         /// Hash a single (Z2, count) contribution using the configured policy.
-        static inline size_t z_freq_hash(const Z2 z, const int i) { return hashpolicy::z_freq_hash(z, i); }
+        static inline size_t z_freq_hash(const Z2 z, const int i) {
+            auto mix64_variant = [](uint64_t x) {
+                x ^= x >> 12;
+                x ^= x << 25;
+                x ^= x >> 27;
+                x *= 0x2545F4914F6CDD1DULL;
+                return x;
+            };
+            const uint64_t seed = (static_cast<uint64_t>(std::hash<Z2>{}(std::abs(z))) << 3)
+                                | static_cast<uint64_t>(i & 0x7);
+            return static_cast<size_t>(mix64_variant(seed));
+        }
         /// Combine all entries of a SmallFreqMap into a stable signature.
         static inline size_t frequency_hash(const FrequencyMap& f);
         /// Report the current sizeof(SO6) in bytes (compile-time constant)
         static constexpr std::size_t size_bytes() { return sizeof(SO6); }
 };
 
-// Define iterator out-of-class
-#include "iter/SO6Iterator.hpp"
-
 // Inline definitions split out for clarity (no logic changes)
 #include "so6/Signatures.inl"
-
-inline std::pair<SO6::Iterator,SO6::Iterator> SO6::get_column(const uint8_t col, const uint8_t* Row_, const uint8_t* Col_) const {
-    return std::pair<SO6::Iterator,SO6::Iterator>(Iterator(*this, (col << 2) + (col << 1), Row_, Col_), Iterator(*this, (col << 2) + (col << 1) + 6, Row_, Col_));
-}
-
-// (no Lehmer overload; comparisons use decode-only local arrays)
 
 namespace std {
     template <>
@@ -327,18 +245,4 @@ namespace std {
         uint16_t operator()(const SO6& s) const { return s.hash; }
     };
 }
-// Verify SO6 layout against the end of the last data member present under the active policy
-#include <cstddef>
-#if (EXACT_FREQ_NONE == 1)
-// No frequency maps present; last data member is row_perm_lh_
-constexpr std::size_t __so6_expected_size = offsetof(SO6, row_perm_lh_) + sizeof(((SO6*)0)->row_perm_lh_);
-#elif (EXACT_FREQ_COLS_ONLY == 1)
-// Only column maps present; last data member is col_frequency
-constexpr std::size_t __so6_expected_size = offsetof(SO6, col_frequency) + sizeof(((SO6*)0)->col_frequency);
-#else
-// Both row and column maps present; last data member is col_frequency
-constexpr std::size_t __so6_expected_size = offsetof(SO6, col_frequency) + sizeof(((SO6*)0)->col_frequency);
-#endif
-static_assert(sizeof(SO6) == __so6_expected_size, "SO6 size changed; check packing/layout");
-
 #endif

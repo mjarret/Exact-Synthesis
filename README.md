@@ -88,7 +88,7 @@ Or manually:
 	sudo apt-get install -y libabsl-dev libfolly-dev
 
 Make will pick up Abseil via pkg-config automatically when BACKEND=absl.
-Finalized tables use a pluggable hash container selected at compile time via `include/ds/hash_containers.hpp`.
+Finalized tables default to `ankerl::unordered_dense` (with an automatic fallback to `std::unordered_*` if the dense hash header is unavailable).
 
 - Default: vendored `robin_hood::unordered_flat_set` (50% max load factor via template param).
 - Alternate backends (header‑detected, fallback safe):

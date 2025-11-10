@@ -13,12 +13,10 @@
  * @brief Utility functions for set operations and conversions.
  */
 namespace utils {
-    static constexpr uint16_t NEG = 0b10;
-    static constexpr uint16_t POS = 0b01;
-    static constexpr uint16_t DISAGREE = 0b11;
-    static constexpr uint16_t AGREE = 0b00;
-    static constexpr uint16_t UNSET = 0b00;
-    static constexpr uint8_t BITS = 0b11;
+    // Compact sign mask: 1 bit per row (0 = POS, 1 = NEG)
+    static constexpr uint16_t NEG = 0b1;
+    static constexpr uint16_t POS = 0b0;
+    static constexpr uint8_t  BITS = 0b1;
 
     static constexpr auto Equal = std::strong_ordering::equal;
     static constexpr auto Less = std::strong_ordering::less;
@@ -26,11 +24,15 @@ namespace utils {
     static constexpr auto Equivalent = std::strong_ordering::equivalent;
 
     inline static uint8_t mask_at_index(const uint16_t& mask, const int& index) {
-        return (mask >> (2*index)) & BITS;
+        return static_cast<uint8_t>((mask >> index) & BITS);
     }
 
     inline static uint16_t& set_mask_sign(uint16_t& mask, const int& index, const uint16_t& sign) {
-        return mask = mask^(((mask >> (2 * index)) & BITS) << (2 * index)) | (sign << (2 * index));  // Set the two bits to `sign`
+        // Branchless: set bit at position `index` to (sign & 1)
+        const uint16_t bit = static_cast<uint16_t>(1u << index);
+        const uint16_t sel = static_cast<uint16_t>(-static_cast<int>(sign & 0x1u)); // 0x0000 or 0xFFFF
+        mask = static_cast<uint16_t>((mask & ~bit) | (sel & bit));
+        return mask;
     }
 
     /**
@@ -69,8 +71,8 @@ namespace utils {
             uint8_t fsm = mask_at_index(first_sign_mask, i);
             uint8_t ssm = mask_at_index(second_sign_mask, i);
 
-            if((comp1 == Less)^(fsm==NEG)) first_sign_mask ^= 0xFFFF;
-            if((comp2 == Less)^(ssm==NEG)) second_sign_mask ^= 0xFFFF;
+            if ((comp1 == Less) ^ (fsm == NEG)) first_sign_mask  ^= 0x3Fu; // flip all 6 bits
+            if ((comp2 == Less) ^ (ssm == NEG)) second_sign_mask ^= 0x3Fu;
             break;
         }
 
@@ -81,8 +83,8 @@ namespace utils {
 
         for (; first_it != first_end && second_it != second_end; ++first_it, ++second_it, ++i) {
             
-            first_is_neg = mask_at_index(first_sign_mask, i) == NEG;
-            second_is_neg = mask_at_index(second_sign_mask, i) == NEG;
+            first_is_neg = (mask_at_index(first_sign_mask, i) == NEG);
+            second_is_neg = (mask_at_index(second_sign_mask, i) == NEG);
             comparison = (second_is_neg ? -*second_it : *second_it) <=> (first_is_neg ? -*first_it : *first_it);
         
             if (comparison == Equal) continue;
@@ -93,10 +95,6 @@ namespace utils {
         }
         
         return Equal;  // All elements are equal
-    }
-
-    static std::strong_ordering lex_order(std::pair<SO6::Iterator,SO6::Iterator>& first, std::pair<SO6::Iterator,SO6::Iterator>& second, const uint16_t& first_sign = 0, const uint16_t& second_sign = 0) {
-        return lex_order(first.first, first.second, second.first, second.second, first_sign, second_sign);
     }
 
     // Removed unused helpers (apply_sign_mask, lex_less) to reduce dead code

@@ -44,7 +44,7 @@ struct Order6 {
         bf.mask_bf = static_cast<uint16_t>(m & 0x3Fu);
         bf.rank_bf = static_cast<uint16_t>(r & 0x03FFu);
     }
-    inline void set_rank(uint16_t r) { bf.rank_bf = static_cast<uint16_t>(r & 0x03FFu); }
+    inline void set_rank(uint16_t r) { bf.rank_bf = r & 0x03FFu; }
 
     uint8_t size() const { return popcnt(mask()); }
 
@@ -92,7 +92,7 @@ struct Order6 {
         uint8_t k = size();
         uint16_t max = FACT[k];
         uint16_t r = rank();
-        if (static_cast<uint32_t>(r) + 1u < max) { set_rank(static_cast<uint16_t>(r + 1)); return true; }
+        if (r+1 < max) { set_rank(r+1); return true; }
         set_rank(0u); return false;
     }
 

@@ -38,6 +38,7 @@ namespace indicators {
 #include <indicators/dynamic_progress.hpp>
 #include <indicators/progress_bar.hpp>
 #include "sys/memory.hpp"
+#include "config/Globals.hpp"
 
 namespace indicators {
 
@@ -64,6 +65,8 @@ namespace indicators {
         size_t finalize_count{0};
         size_t rss_at_begin{0};
         int current_t_{0};
+
+        bool enabled_{true};
 
         static inline size_t rss_bytes() { return getProcessRSSBytes(); }
 
@@ -142,6 +145,16 @@ namespace indicators {
             start_time = std::chrono::high_resolution_clock::now();
             current_t_ = current_t_count;
 
+            enabled_ = !suppress_indicators;
+
+            if (!enabled_) {
+                // Capture baselines for consistency, but don't set up bars
+                rss_at_begin = rss_bytes();
+                predicted_mats = 0;
+                finalize_count = 0;
+                return;
+            }
+
             // Only show bars for the current T; hide completed bars to avoid re-printing
             bars_.set_option(indicators::option::HideBarWhenComplete{true});
 
@@ -169,7 +182,7 @@ namespace indicators {
         }
 
         void complete(size_t result_size) {
-            if (kill_signal_received.load()) return;
+            if (!enabled_ || kill_signal_received.load()) return;
             // v1-style time postfix on the main bar
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time).count();
             std::ostringstream oss;
@@ -239,7 +252,7 @@ namespace indicators {
         }
 
         inline void set_progress(size_t progress, size_t set_size) {
-            if (kill_signal_received.load()) return;
+            if (!enabled_ || kill_signal_received.load()) return;
             // Update finding bar progress and postfix
             std::ostringstream m; m << set_size << "/" << (predicted_mats ? predicted_mats : 0);
             bars_[find_idx].set_option(indicators::option::PostfixText{m.str()});
@@ -250,6 +263,7 @@ namespace indicators {
 
         // Sub-bar controls for finalization
         inline void on_finalize_started(size_t found_count) {
+            if (!enabled_) return;
             finalize_count = found_count;
             if (finalize_count > 0) bars_[finalize_idx].set_option(indicators::option::MaxProgress{finalize_count});
             double exp_b = expected_bytes(predicted_mats, g_prev_memory_slope_bpm);
@@ -259,6 +273,7 @@ namespace indicators {
         }
 
         inline void on_finalize_finished() {
+            if (!enabled_) return;
             size_t rss_end = rss_bytes();
             double used = (rss_end > rss_at_begin) ? static_cast<double>(rss_end - rss_at_begin) : 0.0;
             double exp_b = expected_bytes(predicted_mats, g_prev_memory_slope_bpm);
@@ -273,7 +288,7 @@ namespace indicators {
             }
         }
 
-        inline indicators::ProgressBar* get_finalize_bar() { return &bars_[finalize_idx]; }
+        inline indicators::ProgressBar* get_finalize_bar() { return enabled_ ? &bars_[finalize_idx] : nullptr; }
         inline indicators::ProgressBar* get_io_bar() { return nullptr; }
 
         // Accessors for compatibility (not used externally in current code except tests)

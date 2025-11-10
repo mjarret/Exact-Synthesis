@@ -4,6 +4,8 @@
 #include <cassert>
 #include <ostream>
 #include <bit>
+#include <span>
+#include <algorithm>
 #include "util/assume.hpp"
 
 /// Lehmer6
@@ -24,12 +26,84 @@ class Lehmer6 {
 
     static constexpr uint16_t FACT[7] = {1, 1, 2, 6, 24, 120, 720};
 
-    // On-demand global decoding table: rank (0..719) -> permutation array
+    // -------- Fast LUTs from bak-2 (packed-15 digits and encode5) --------
+    // Pack only the first five digits as a base-6 number (MSD first).
+    static inline uint16_t pack_base6_5(std::span<const uint8_t, 6> perm) {
+        uint32_t key = 0;
+        for (int i = 0; i < 5; ++i) key = key * 6u + perm[static_cast<size_t>(i)];
+        return static_cast<uint16_t>(key); // 6^5 = 7776 < 2^16
+    }
+
+    // Encode LUT keyed by the first five digits (0..7775). Invalid prefixes -> 0xFFFF.
+    static inline const std::array<uint16_t, 7776>& encode5_table() {
+        static const std::array<uint16_t, 7776> tbl = [] {
+            std::array<uint8_t, 6> perms{0,1,2,3,4,5};
+            std::array<uint16_t, 7776> t{};
+            t.fill(0xFFFFu);
+            uint16_t r = 0;
+            do {
+                uint32_t key = 0;
+                for (int i = 0; i < 5; ++i) key = key * 6u + perms[static_cast<size_t>(i)];
+                t[key] = r++;
+            } while (std::next_permutation(perms.begin(), perms.end()));
+            return t;
+        }();
+        return tbl;
+    }
+
+    // Packed-15 table: rank -> five 3-bit digits (p[0..4])
+    static inline const std::array<uint16_t, 720>& packed15_table() {
+        static const std::array<uint16_t, 720> T = []{
+            std::array<uint16_t, 720> a{};
+            std::array<uint8_t, 6> perms{0,1,2,3,4,5};
+            uint16_t r = 0;
+            do {
+                uint16_t b = static_cast<uint16_t>((perms[0]) | (perms[1] << 3) | (perms[2] << 6) | (perms[3] << 9) | (perms[4] << 12));
+                a[r++] = b;
+            } while (std::next_permutation(perms.begin(), perms.end()));
+            return a;
+        }();
+        return T;
+    }
+
+    // Final digit LUT: 15-bit pack -> p[5] (0..5). Unused entries are 0xFF.
+    static inline const std::array<uint8_t, (1u << 15)>& final_digit_by_pack() {
+        static const std::array<uint8_t, (1u << 15)> L = []{
+            std::array<uint8_t, (1u << 15)> a{};
+            a.fill(0xFFu);
+            const auto& P15 = packed15_table();
+            for (uint16_t r = 0; r < 720; ++r) {
+                const uint16_t pack = P15[r];
+                uint16_t used = 0;
+                used |= 1u << ( ( pack       ) & 0x7u );
+                used |= 1u << ( ( pack >>  3 ) & 0x7u );
+                used |= 1u << ( ( pack >>  6 ) & 0x7u );
+                used |= 1u << ( ( pack >>  9 ) & 0x7u );
+                used |= 1u << ( ( pack >> 12 ) & 0x7u );
+                const uint16_t missing = static_cast<uint16_t>((~used) & 0x3Fu);
+                a[pack] = static_cast<uint8_t>(std::countr_zero(missing));
+            }
+            return a;
+        }();
+        return L;
+    }
+
+    // On-demand global decoding table: rank (0..719) -> permutation array, built from packed15+final-digit
     static inline const std::array<std::array<uint8_t, 6>, 720>& decoding_table() {
         static const std::array<std::array<uint8_t, 6>, 720> tbl = [] {
             std::array<std::array<uint8_t, 6>, 720> t{};
+            const auto& P15 = packed15_table();
+            const auto& F   = final_digit_by_pack();
             for (uint16_t r = 0; r < 720; ++r) {
-                t[static_cast<size_t>(r)] = decode(r);
+                const uint16_t b = P15[r];
+                std::array<uint8_t,6> p{};
+                p[0] = static_cast<uint8_t>( b        & 0x7u);
+                p[1] = static_cast<uint8_t>((b >> 3) & 0x7u);
+                p[2] = static_cast<uint8_t>((b >> 6) & 0x7u);
+                p[3] = static_cast<uint8_t>((b >> 9) & 0x7u);
+                p[4] = static_cast<uint8_t>((b >>12) & 0x7u);
+                p[5] = F[b];
+                t[r] = p;
             }
             return t;
         }();
@@ -71,6 +145,16 @@ public:
 
     // Factory: from a permutation array (must be a permutation of 0..5).
     static Lehmer6 from_perm(const std::array<uint8_t, 6>& perm) {
+        return Lehmer6(encode(std::span<const uint8_t, 6>(perm)));
+    }
+
+    static Lehmer6 from_perm(const uint8_t (&perm)[6]) {
+        return Lehmer6(encode(std::span<const uint8_t, 6>(perm)));
+    }
+
+    // Generic contiguous-view factory: accepts any contiguous block convertible
+    // to span<const uint8_t, 6> with zero overhead.
+    static Lehmer6 from_perm(std::span<const uint8_t, 6> perm) {
         return Lehmer6(encode(perm));
     }
 
@@ -82,15 +166,40 @@ public:
 
     // ----- Access -----
 
-    // Element at position i (0..5) via table lookup.
+    // Element at position i (0..5) using packed-15 + final-digit LUT (no array materialization)
     uint8_t operator[](size_t i) const {
-        ASSUME(i < 6);
-        return decoding_table()[static_cast<size_t>(code_)][i];
+        const uint16_t b = packed15_table()[code_];
+        return i<5 ? static_cast<uint8_t>((b >> (3 * i)) & 0x7u) : final_digit_by_pack()[b];
     }
 
-    // Materialize the whole permutation via table lookup.
+    // Materialize the whole permutation via packed-15 + final-digit LUT.
     std::array<uint8_t, 6> to_array() const {
-        return decoding_table()[static_cast<size_t>(code_)];
+        std::array<uint8_t, 6> out{};
+        const uint16_t b = packed15_table()[code_];
+        out[0] = static_cast<uint8_t>( b        & 0x7u);
+        out[1] = static_cast<uint8_t>((b >> 3) & 0x7u);
+        out[2] = static_cast<uint8_t>((b >> 6) & 0x7u);
+        out[3] = static_cast<uint8_t>((b >> 9) & 0x7u);
+        out[4] = static_cast<uint8_t>((b >>12) & 0x7u);
+        out[5] = final_digit_by_pack()[b];
+        return out;
+    }
+
+    // Zero-copy accessors to the decoding row to avoid by-value array copies
+    static inline const std::array<uint8_t, 6>& decode_ref(uint16_t bits) {
+        return decoding_table()[static_cast<size_t>(bits % 720u)];
+    }
+    static inline const uint8_t* decode_ptr(uint16_t bits) {
+        return decoding_table()[static_cast<size_t>(bits % 720u)].data();
+    }
+
+    // Apply this permutation to an input array of length 6 (in-place).
+    template <typename T>
+    void apply(T (&arr)[6]) const {
+        auto perm = to_array();
+        T tmp[6];
+        for (int i = 0; i < 6; ++i) tmp[i] = arr[perm[i]];
+        for (int i = 0; i < 6; ++i) arr[i] = tmp[i];
     }
 
     // ----- Iteration -----
@@ -112,35 +221,22 @@ public:
     // ----- Translation: permutation <-> 10-bit code -----
 
     // Encode permutation (array of 6 unique values in 0..5) to rank in [0,719].
-    static uint16_t encode(const std::array<uint8_t, 6>& perm) {
-        uint16_t mask = 0b111111u;
-        uint16_t idx = 0;
-        for (int i = 0; i < 6; ++i) {
-            const uint16_t x = perm[static_cast<size_t>(i)];
-            ASSUME(x < 6);
-            // rank of x among remaining symbols:
-            const uint16_t r = popcount6(mask & ((1u << x) - 1u));
-            ASSUME(mask & (1u << x));     // x must be available
-            idx = static_cast<uint16_t>(idx + r * FACT[5 - i]);
-            mask &= ~(1u << x);
-        }
-        ASSUME(idx < 720);
-        return idx; // fits in exactly 10 bits
+    static uint16_t encode(std::span<const uint8_t, 6> perm) {
+        const uint32_t key5 = pack_base6_5(perm);
+        return encode5_table()[key5];
     }
 
-    // Decode rank in [0,1023] (only 0..719 are used) back to permutation.
+    // Decode rank in [0,1023] (only 0..719 are used) back to permutation (packed-15 + final-digit LUT).
     static std::array<uint8_t, 6> decode(uint16_t bits) {
         bits = static_cast<uint16_t>(bits % 720u);
         std::array<uint8_t, 6> out{};
-        uint16_t mask = 0b111111u;
-        for (int i = 0; i < 6; ++i) {
-            const uint16_t f = FACT[5 - i];
-            const uint16_t q = bits / f;
-            bits %= f;
-            const uint16_t v = select_kth(mask, q);
-            out[static_cast<size_t>(i)] = static_cast<uint8_t>(v);
-            mask &= ~(1u << v);
-        }
+        const uint16_t b = packed15_table()[bits];
+        out[0] = static_cast<uint8_t>( b        & 0x7u);
+        out[1] = static_cast<uint8_t>((b >> 3) & 0x7u);
+        out[2] = static_cast<uint8_t>((b >> 6) & 0x7u);
+        out[3] = static_cast<uint8_t>((b >> 9) & 0x7u);
+        out[4] = static_cast<uint8_t>((b >>12) & 0x7u);
+        out[5] = final_digit_by_pack()[b];
         return out;
     }
 

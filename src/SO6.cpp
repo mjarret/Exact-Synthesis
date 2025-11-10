@@ -9,6 +9,65 @@ constexpr auto Equal = std::strong_ordering::equal;
 constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
 
+namespace {
+    // Load 24-bit packed Z2 from column base and row index (column-major, 3 bytes per entry)
+    static inline __attribute__((always_inline)) Z2 load_z2_from_col_row(const uint8_t* base_col, uint8_t row) {
+        const uint8_t* p = base_col + static_cast<int>(row) * 3;
+        uint32_t v = static_cast<uint32_t>(p[0])
+                   | (static_cast<uint32_t>(p[1]) << 8)
+                   | (static_cast<uint32_t>(p[2]) << 16);
+        return Z2(v);
+    }
+
+    // Compare a single column under row/col permutations and sign masks
+    static inline __attribute__((always_inline)) std::strong_ordering cmp_col_fast(
+        const SO6& s,
+        const uint8_t* rowL, const uint8_t* colL,
+        const uint8_t* rowR, const uint8_t* colR,
+        uint16_t first_sign_mask, uint16_t second_sign_mask,
+        int col_idx)
+    {
+        const int cL = colL ? colL[col_idx] : col_idx;
+        const int cR = colR ? colR[col_idx] : col_idx;
+        const uint8_t* baseL = s.arr24_ + cL * 18; // 6 rows * 3 bytes
+        const uint8_t* baseR = s.arr24_ + cR * 18;
+
+        int i = 0;
+        std::strong_ordering comp1 = Equal;
+        std::strong_ordering comp2 = Equal;
+
+        // Phase 1: find orientation (first non-zero)
+        for (; i < 6; ++i) {
+            const Z2 L = load_z2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
+            const Z2 R = load_z2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            comp1 = L.int_c <=> 0;
+            comp2 = R.int_c <=> 0;
+            if (comp1 == Equal && comp2 == Equal) continue;
+            if (comp1 == Equal) return Greater;
+            if (comp2 == Equal) return Less;
+            const uint8_t fsm = static_cast<uint8_t>((first_sign_mask  >> i) & utils::BITS);
+            const uint8_t ssm = static_cast<uint8_t>((second_sign_mask >> i) & utils::BITS);
+            if ((comp1 == Less) ^ (fsm == utils::NEG)) first_sign_mask  ^= 0x3Fu;
+            if ((comp2 == Less) ^ (ssm == utils::NEG)) second_sign_mask ^= 0x3Fu;
+            break;
+        }
+
+        // Phase 2: lex compare with sign masks
+        for (; i < 6; ++i) {
+            const Z2 L = load_z2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
+            const Z2 R = load_z2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            const bool first_is_neg  = (((first_sign_mask  >> i) & utils::BITS) == utils::NEG);
+            const bool second_is_neg = (((second_sign_mask >> i) & utils::BITS) == utils::NEG);
+            const std::strong_ordering cmp = (second_is_neg ? -R : R) <=> (first_is_neg ? -L : L);
+            if (cmp == Equal) continue;
+            if (L.int_c == 0) return Greater;
+            if (R.int_c == 0) return Less;
+            return cmp;
+        }
+        return Equal;
+    }
+}
+
 /**
  * Basic constructor. Initializes Zero matrix.
  *
@@ -23,25 +82,32 @@ SO6::SO6()
 const SO6& SO6::identity() {
     static const SO6 I = []() {
         SO6 temp;
-        for (int k = 0; k < 6; k++) {
-            // reserve() was a no-op for SmallFreqMap; removed for micro-optimization
-            temp.set_element(static_cast<uint8_t>(k), static_cast<uint8_t>(k), Z2(1, 0, 0));
-            #if (EXACT_FREQ_COLS_ONLY == 0) && (EXACT_FREQ_NONE == 0)
-            temp.row_frequency[k][Z2(1, 0, 0)] = 1;
-            temp.row_frequency[k][Z2(0, 0, 0)] = 5;
-            #endif
-            #if (EXACT_FREQ_NONE == 0)
-            temp.col_frequency[k][Z2(1, 0, 0)] = 1;
-            temp.col_frequency[k][Z2(0, 0, 0)] = 5;
-            #endif
-        }
+        for (uint8_t k = 0; k < 6; k++) temp.set_element(k, k, Z2(1, 0, 0));
         temp.canonical_form();
         temp.last_T = 15;
-        temp.hash = prime;
-        temp.col_hash = prime;
+        temp.recompute_hash();
         return temp;
     }();
     return I;
+}
+
+void SO6::recompute_hash() {
+    uint16_t hash_acc = 0;
+    uint16_t col_hash_acc = 0;
+    // Columns contribute their Gray-like folded signature to both hash fields
+    for (int col = 0; col < 6; ++col) {
+        uint16_t col_freq = col_frequency_signature(*this, col);
+        uint16_t col_sig = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
+        hash_acc     = static_cast<uint16_t>(hash_acc + col_sig);
+        col_hash_acc = static_cast<uint16_t>(col_hash_acc + col_sig);
+    }
+    // Rows contribute their frequency signatures to the primary hash only
+    for (int row = 0; row < 6; ++row) {
+        uint16_t row_freq = row_frequency_signature(*this, row);
+        hash_acc = static_cast<uint16_t>(hash_acc + row_freq);
+    }
+    hash = hash_acc;
+    col_hash = col_hash_acc;
 }
 
 /**
@@ -57,42 +123,19 @@ SO6 SO6::operator*(const SO6 &other) const
     {
         for (int k = 0; k < 6; ++k)
         {
-            const Z2 left_element = get_element(static_cast<uint8_t>(row), static_cast<uint8_t>(k));
+            const Z2 left_element = get_element(row, k);
             if (left_element.int_c == 0) continue;
             for (int col = 0; col < 6; ++col)
             {
-                Z2 right_element = other.get_element(static_cast<uint8_t>(k), static_cast<uint8_t>(col));
+                Z2 right_element = other.get_element(k, col);
                 if (right_element.int_c == 0) continue;
-                Z2 cur = prod.get_element(static_cast<uint8_t>(row), static_cast<uint8_t>(col));
+                Z2 cur = prod.get_element(row, col);
                 cur += (left_element * right_element);
-                prod.set_element(static_cast<uint8_t>(row), static_cast<uint8_t>(col), cur);
+                prod.set_element(row, col, cur);
             }
         }
     }
     return prod;
-}
-
-SO6 SO6::left_multiply_by_T(const uint8_t i) const
-{
-    SO6 prod = *this;
-    switch (i) {
-        case 0: return left_multiply_by_T<0>(prod);
-        case 1: return left_multiply_by_T<1>(prod);
-        case 2: return left_multiply_by_T<2>(prod);
-        case 3: return left_multiply_by_T<3>(prod);
-        case 4: return left_multiply_by_T<4>(prod);
-        case 5: return left_multiply_by_T<5>(prod);
-        case 6: return left_multiply_by_T<6>(prod);
-        case 7: return left_multiply_by_T<7>(prod);
-        case 8: return left_multiply_by_T<8>(prod);
-        case 9: return left_multiply_by_T<9>(prod);
-        case 10: return left_multiply_by_T<10>(prod);
-        case 11: return left_multiply_by_T<11>(prod);
-        case 12: return left_multiply_by_T<12>(prod);
-        case 13: return left_multiply_by_T<13>(prod);
-        case 14: return left_multiply_by_T<14>(prod);
-        default: throw std::invalid_argument("Invalid value for i");
-    }
 }
 
 /**
@@ -114,82 +157,36 @@ SO6 SO6::left_multiply_by_T(const uint8_t i) const
 
 
 bool SO6::is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm, const uint16_t sign_perm) {
-    // Decode only for comparison: build raw arrays via operator[] for both current and candidate perms
     uint8_t cur_row_a[6];
     uint8_t cur_col_a[6];
     uint8_t cand_row_a[6];
     uint8_t cand_col_a[6];
     for (int i = 0; i < 6; ++i) {
-        // Decode current and candidate from Lehmer via operator[]
         cur_row_a[i]  = row_perm_lh_[i];
         cur_col_a[i]  = col_perm_lh_[i];
         cand_row_a[i] = row_perm[i];
         cand_col_a[i] = col_perm[i];
     }
-
-    struct ArrayColIter {
-        const SO6& s;
-        const uint8_t* row;   // size 6
-        const uint8_t* col;   // size 6
-        int col_idx;          // 0..5
-        int i;                // 0..6
-        Z2 operator*() const {
-            const int c = col ? col[col_idx] : col_idx;
-            const int r = row ? row[i] : i;
-            ASSUME(unsigned(c) < 6u);
-            ASSUME(unsigned(r) < 6u);
-            return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c));
-        }
-        ArrayColIter& operator++() { ++i; return *this; }
-        bool operator!=(const ArrayColIter& other) const { return i != other.i; }
-    };
-
     for (int col = 0; col < 6; ++col) {
-        ArrayColIter cur_begin{*this, cur_row_a, cur_col_a, col, 0};
-        ArrayColIter cur_end  {*this, cur_row_a, cur_col_a, col, 6};
-        ArrayColIter cand_begin{*this, cand_row_a, cand_col_a, col, 0};
-        ArrayColIter cand_end  {*this, cand_row_a, cand_col_a, col, 6};
-        auto comparison = utils::lex_order(cur_begin, cur_end, cand_begin, cand_end, sign_convention, sign_perm);
-        if (comparison == Equal) continue;
-        return comparison == Greater;
+        auto cmp = cmp_col_fast(*this, cur_row_a, cur_col_a, cand_row_a, cand_col_a, sign_convention, sign_perm, col);
+        if (cmp == Equal) continue;
+        return cmp == Greater;
     }
     return false;
 }
 
 bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col, const uint16_t sign_perm) {
-    // Decode current from Lehmer once for comparison
+    // Fast path
     uint8_t cur_row_a[6];
     uint8_t cur_col_a[6];
     for (int i = 0; i < 6; ++i) {
         cur_row_a[i] = row_perm_lh_[i];
         cur_col_a[i] = col_perm_lh_[i];
     }
-
-    struct ArrayColIter {
-        const SO6& s;
-        const uint8_t* row;   // size 6
-        const uint8_t* col;   // size 6
-        int col_idx;          // 0..5
-        int i;                // 0..6
-        Z2 operator*() const {
-            const int c = col ? col[col_idx] : col_idx;
-            const int r = row ? row[i] : i;
-            ASSUME(unsigned(c) < 6u);
-            ASSUME(unsigned(r) < 6u);
-            return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c));
-        }
-        ArrayColIter& operator++() { ++i; return *this; }
-        bool operator!=(const ArrayColIter& other) const { return i != other.i; }
-    };
-
     for (int col = 0; col < 6; ++col) {
-        ArrayColIter cur_begin{*this, cur_row_a, cur_col_a, col, 0};
-        ArrayColIter cur_end  {*this, cur_row_a, cur_col_a, col, 6};
-        ArrayColIter cand_begin{*this, cand_row, cand_col, col, 0};
-        ArrayColIter cand_end  {*this, cand_row, cand_col, col, 6};
-        auto comparison = utils::lex_order(cur_begin, cur_end, cand_begin, cand_end, sign_convention, sign_perm);
-        if (comparison == Equal) continue;
-        return comparison == Greater;
+        auto cmp = cmp_col_fast(*this, cur_row_a, cur_col_a, cand_row, cand_col, sign_convention, sign_perm, col);
+        if (cmp == Equal) continue;
+        return cmp == Greater;
     }
     return false;
 }

@@ -17,6 +17,14 @@ endif
 EXTRA_CXXFLAGS ?=
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
+# Enumerator selection: ENUM=cycle to enable OP6-style cycle caching
+ENUM ?= lut
+ifeq ($(ENUM),cycle)
+  CXXFLAGS += -DDS_ENUM_CYCLE=1
+endif
+
+
+
 # Aggressive optimizations toggle: AGGRESSIVE=1 to add extra flags
 AGGRESSIVE ?= 0
 ifeq ($(AGGRESSIVE),1)
@@ -43,21 +51,6 @@ ifeq ($(COMPILER),clang)
   CLANG_CXXMODE := -x c++
 endif
 
-# Compile-time hash backend selection
-# Valid values: boost, ankerl
-BACKEND ?= ankerl
-
-# Frequency map storage selection (default: none)
-# Usage: make FREQ=baseline|cols|none
-FREQ ?= none
-ifeq ($(FREQ),baseline)
-  CXXFLAGS += -DEXACT_FREQ_NONE=0 -DEXACT_FREQ_COLS_ONLY=0
-else ifeq ($(FREQ),cols)
-  CXXFLAGS += -DEXACT_FREQ_NONE=0 -DEXACT_FREQ_COLS_ONLY=1
-else ifeq ($(FREQ),none)
-  CXXFLAGS += -DEXACT_FREQ_NONE=1 -DEXACT_FREQ_COLS_ONLY=0
-endif
-
 # Opt-in warnings (export WARN=1 to enable)
 ifeq ($(WARN),1)
   CXXFLAGS += -Wall -Wextra -Wconversion -Wshadow -Wpedantic
@@ -73,25 +66,53 @@ ifeq ($(COMPILER),clang)
 endif
 
 # Source Files
-SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/Z2.cpp src/algo/Generate.cpp
+SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp
 OBJ := $(SRC:.cpp=.o)
+
+# Standalone app object files (built on demand)
+APP_OBJ := \
+  apps/hash_recompute_tester.o \
+  apps/mitm_match_tester.o \
+  apps/self_inverse_tester.o \
+  apps/pair_distance_tester.o
+
+ALL_OBJ := $(OBJ) $(APP_OBJ)
 
 # Output Executable
 TARGET := main.out
 DEBUG_CXXFLAGS := -g
 DEBUG_LDFLAGS := -ltcmalloc
 
+# Binaries produced by this workspace
+BINARIES := $(TARGET) hash_tester mitm_tester self_tester pair_tester
+
 # Default Rule
 all: $(TARGET)
 
 # (GPU/OpenCL accelerator removed; CPU-only build)
 
-# Mapping tester (standalone)
-.PHONY: perm_tester
-perm_tester: apps/perm_mapping_tester.o src/SO6.o src/Z2.o
+# Hash recompute tester (standalone)
+.PHONY: hash_tester
+hash_tester: apps/hash_recompute_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
-apps/perm_mapping_tester.o: apps/perm_mapping_tester.cpp
+apps/hash_recompute_tester.o: apps/hash_recompute_tester.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# MITM match tester (standalone)
+.PHONY: mitm_tester
+mitm_tester: apps/mitm_match_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
+
+apps/mitm_match_tester.o: apps/mitm_match_tester.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# Self-inverse tester (standalone)
+.PHONY: self_tester
+self_tester: apps/self_inverse_tester.o src/SO6.o src/Z2.o src/algo/Canonicalizer.o src/Globals.o src/TMoves.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
+
+apps/self_inverse_tester.o: apps/self_inverse_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Link the Target
@@ -102,6 +123,9 @@ $(TARGET): $(OBJ)
 %.o: %.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
+# Stabilize T-move codegen if optimizer is too aggressive
+src/TMoves.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
+
 # Debug
 debug: CXXFLAGS := $(filter-out -DNDEBUG,$(CXXFLAGS)) $(DEBUG_CXXFLAGS)
 debug: LDFLAGS += $(DEBUG_LDFLAGS)
@@ -109,14 +133,8 @@ debug: clean $(TARGET)
 
 # Clean Rule
 
-ifeq ($(BACKEND),boost)
-  CXXFLAGS += -DEXACT_USE_BOOST
-endif
-ifeq ($(BACKEND),ankerl)
-  CXXFLAGS += -DEXACT_USE_ANKERL
-endif
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(ALL_OBJ) $(ALL_OBJ:.o=.d) $(BINARIES) *.out
 
 .PHONY: distclean
 distclean: clean
@@ -156,3 +174,52 @@ auto-add:
 	else \
 		echo "Nothing to add."; \
 	fi
+# Pair distance tester (standalone)
+.PHONY: pair_tester
+pair_tester: apps/pair_distance_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
+
+apps/pair_distance_tester.o: apps/pair_distance_tester.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+# Google Benchmark target for Lehmer6 (requires libbenchmark-dev)
+.PHONY: lehmer_bench
+lehmer_bench: benchmarks/lehmer6_bench.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -I../Exact-Synthesis-bak-2/include $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+benchmarks/lehmer6_bench.o: benchmarks/lehmer6_bench.cpp include/ds/Lehmer6.hpp ../Exact-Synthesis-bak-2/include/ds/Lehmer6.hpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -I../Exact-Synthesis-bak-2/include -c $< -o $@
+
+# Row equivalence classes benchmark
+.PHONY: row_ecs_bench
+row_ecs_bench: benchmarks/row_ecs_bench.o src/SO6.o src/Z2.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/TMoves.o
+	$(CXX) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+benchmarks/row_ecs_bench.o: benchmarks/row_ecs_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) -c $< -o $@
+
+# Order6 enumeration microbench
+.PHONY: ord6_enum_bench
+ord6_enum_bench: benchmarks/ord6_enum_bench.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+benchmarks/ord6_enum_bench.o: benchmarks/ord6_enum_bench.cpp include/ds/FlatFrequencyTable.hpp include/ds/Order6.hpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# OrderedPartition6 enumeration microbench (uses bak-2 includes exclusively first)
+.PHONY: op6_enum_bench
+op6_enum_bench: benchmarks/op6_enum_bench.o
+	$(CXX) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+benchmarks/op6_enum_bench.o: benchmarks/op6_enum_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) -c $< -o $@
+# Build LUT (T=8) end-to-end microbenchmarks
+.PHONY: lut_build_bench cycle_build_bench
+lut_build_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp \
+		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+cycle_build_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS -DDS_ENUM_CYCLE=1 \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp \
+		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
