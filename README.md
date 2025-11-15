@@ -46,7 +46,7 @@ Notes
 - `apps/`          Executables (entrypoints)
 - `include/`       Public headers
   - `so6/`         SO6 core (`SO6.hpp`, `Signatures.inl`)
-  - `so6/graph/`   Rooted BFS/LUT (`LUT.hpp`)
+  - `ds/LUT.hpp`   Rooted BFS/LUT
   - `policy/`      Hash policy (`HashPolicy.hpp`)
   - `ds/`          Data structures (SmallFreqMap, Lehmer6)
   - `iter/`        Iterators for SO6

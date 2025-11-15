@@ -13,9 +13,8 @@ CANON_OBJS := \
 	canon_regression.o \
 	canon_regression_SO6.o \
 	canon_regression_Canonicalizer.o \
-	canon_regression_Z2.o \
 	canon_regression_Globals.o \
-	canon_regression_TMoves.o
+	canon_regression_T_Operator.o
 
 # Source files
 # SRCS_verify := verify_sqrt2_int.cpp verify_z2.cpp
@@ -51,13 +50,10 @@ canon_regression_SO6.o: ../src/SO6.cpp
 canon_regression_Canonicalizer.o: ../src/algo/Canonicalizer.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
-canon_regression_Z2.o: ../src/Z2.cpp
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
 canon_regression_Globals.o: ../src/Globals.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
-canon_regression_TMoves.o: ../src/TMoves.cpp
+canon_regression_T_Operator.o: ../src/T_Operator.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Clean up build files

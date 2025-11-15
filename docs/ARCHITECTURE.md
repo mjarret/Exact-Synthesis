@@ -5,8 +5,8 @@ This document orients you to the major modules, files, and responsibilities in t
 ## High‑Level Modules
 
 - Core Numerics (Z2)
-  - `include/Z2.hpp`, `src/Z2.cpp`
-  - Implements the compact number type Z[√2] with bit‑packed representation and arithmetic.
+  - `include/Z2.hpp`
+  - Implements the compact number type Z[√2] with bit‑packed representation and arithmetic; header-only for maximal inlining.
 
 - SO6 (6×6 matrices over Z[√2])
   - `include/so6/SO6.hpp`, `src/SO6.cpp`
@@ -22,7 +22,7 @@ This document orients you to the major modules, files, and responsibilities in t
   - Experimental/aux DS live under `include/ds/` and are not wired into production paths.
 
 - Storage & Lookup
-  - `include/so6/graph/LUT.hpp` (rooted BFS by T‑depth, finalized layers + working set)
+  - `include/ds/LUT.hpp` (rooted BFS by T‑depth, finalized layers + working set)
 
 - Utilities
   - `include/util/utils.hpp` (lexicographic compare + sign masks)
@@ -62,4 +62,4 @@ This document orients you to the major modules, files, and responsibilities in t
 - Looking for canonicalization: `src/algo/Canonicalizer.cpp`.
 - Looking for row/col permutations or ranks: `include/ds/Lehmer6.hpp`.
 - Looking for hashing: `include/so6/SO6.hpp` (`z_freq_hash`) and `include/so6/Signatures.inl`.
-- Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/so6/graph/LUT.hpp`.
+- Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/ds/LUT.hpp`.

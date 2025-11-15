@@ -7,7 +7,7 @@
 #include <optional>
 
 #include "so6/SO6.hpp"
-#include "so6/graph/LUT.hpp"
+#include "ds/LUT.hpp"
 
 namespace algo {
 

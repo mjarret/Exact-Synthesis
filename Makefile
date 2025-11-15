@@ -66,7 +66,7 @@ ifeq ($(COMPILER),clang)
 endif
 
 # Source Files
-SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp
+SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp
 OBJ := $(SRC:.cpp=.o)
 
 # Standalone app object files (built on demand)
@@ -93,7 +93,7 @@ all: $(TARGET)
 
 # Hash recompute tester (standalone)
 .PHONY: hash_tester
-hash_tester: apps/hash_recompute_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
+hash_tester: apps/hash_recompute_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/hash_recompute_tester.o: apps/hash_recompute_tester.cpp
@@ -101,7 +101,7 @@ apps/hash_recompute_tester.o: apps/hash_recompute_tester.cpp
 
 # MITM match tester (standalone)
 .PHONY: mitm_tester
-mitm_tester: apps/mitm_match_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
+mitm_tester: apps/mitm_match_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/mitm_match_tester.o: apps/mitm_match_tester.cpp
@@ -109,7 +109,7 @@ apps/mitm_match_tester.o: apps/mitm_match_tester.cpp
 
 # Self-inverse tester (standalone)
 .PHONY: self_tester
-self_tester: apps/self_inverse_tester.o src/SO6.o src/Z2.o src/algo/Canonicalizer.o src/Globals.o src/TMoves.o
+self_tester: apps/self_inverse_tester.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/T_Operator.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/self_inverse_tester.o: apps/self_inverse_tester.cpp
@@ -124,7 +124,7 @@ $(TARGET): $(OBJ)
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Stabilize T-move codegen if optimizer is too aggressive
-src/TMoves.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
+src/T_Operator.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
 
 # Debug
 debug: CXXFLAGS := $(filter-out -DNDEBUG,$(CXXFLAGS)) $(DEBUG_CXXFLAGS)
@@ -176,7 +176,7 @@ auto-add:
 	fi
 # Pair distance tester (standalone)
 .PHONY: pair_tester
-pair_tester: apps/pair_distance_tester.o src/SO6.o src/Z2.o src/algo/Generate.o src/TMoves.o src/Globals.o src/algo/Canonicalizer.o
+pair_tester: apps/pair_distance_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/pair_distance_tester.o: apps/pair_distance_tester.cpp
@@ -191,7 +191,7 @@ benchmarks/lehmer6_bench.o: benchmarks/lehmer6_bench.cpp include/ds/Lehmer6.hpp 
 
 # Row equivalence classes benchmark
 .PHONY: row_ecs_bench
-row_ecs_bench: benchmarks/row_ecs_bench.o src/SO6.o src/Z2.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/TMoves.o
+row_ecs_bench: benchmarks/row_ecs_bench.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/T_Operator.o
 	$(CXX) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
 benchmarks/row_ecs_bench.o: benchmarks/row_ecs_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
@@ -212,14 +212,21 @@ op6_enum_bench: benchmarks/op6_enum_bench.o
 
 benchmarks/op6_enum_bench.o: benchmarks/op6_enum_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) -c $< -o $@
+# Linear transform vs T operator benchmarks
+.PHONY: linear_transform_bench
+linear_transform_bench: benchmarks/linear_transform_bench.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/T_Operator.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+benchmarks/linear_transform_bench.o: benchmarks/linear_transform_bench.cpp include/so6/T_Operator.hpp include/ds/LinearTransform.hpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 # Build LUT (T=8) end-to-end microbenchmarks
 .PHONY: lut_build_bench cycle_build_bench
 lut_build_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
 cycle_build_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS -DDS_ENUM_CYCLE=1 \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/Z2.cpp src/algo/Generate.cpp src/TMoves.cpp \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)

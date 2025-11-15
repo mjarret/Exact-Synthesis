@@ -5,8 +5,7 @@ This index lists the primary headers and sources by topic to reduce time spent h
 ## Core
 
 - Numbers: Z[√2]
-  - Headers: `include/Z2.hpp`
-  - Impl: `src/Z2.cpp`
+  - Header-only: `include/Z2.hpp` (packed arithmetic + helpers)
 
 - Hashing helpers live inline in `include/so6/SO6.hpp`.
 
@@ -30,7 +29,7 @@ This index lists the primary headers and sources by topic to reduce time spent h
 ## Storage & Lookup
 
 - Layered lookup table (finalized layers + working set):
-  - `include/so6/graph/LUT.hpp`
+  - `include/ds/LUT.hpp`
 
 ## Utilities
 

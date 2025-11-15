@@ -5,11 +5,12 @@
 #include <stdexcept>
 
 #include "so6/SO6.hpp"
+#include "ds/LinearTransform.hpp"
 
 /**
- * @brief Lightweight representation of a T operator acting on SO6.
+ * @brief Lightweight representation of a T operator acting on SO6 implemented as a linear map.
  *
- * The template parameters encode the pair of rows affected by the T move.
+ * The template parameters encode the pair of rows affected by the T operator.
  * All logic is kept inline so the compiler can optimize exactly as before.
  */
 template<int Row1, int Row2>
@@ -33,39 +34,7 @@ public:
     static constexpr uint8_t index = compute_index();
 
     static inline __attribute__((always_inline)) SO6& apply_inplace(SO6& S) {
-        S.hash = static_cast<uint16_t>(S.hash
-            - SO6::row_frequency_signature(S, row1)
-            - SO6::row_frequency_signature(S, row2));
-
-        for (int col = 0; col < 6; ++col) {
-            uint16_t col_freq = SO6::col_frequency_signature(S, col);
-            uint16_t col_sig = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-            S.hash = static_cast<uint16_t>(S.hash - col_sig);
-            S.col_hash = static_cast<uint16_t>(S.col_hash - col_sig);
-
-            Z2 a = S.get_element(row1, static_cast<uint8_t>(col));
-            Z2 b = S.get_element(row2, static_cast<uint8_t>(col));
-            const Z2 a_old = a;
-
-            a += b;
-            b -= a_old;
-            b = -b;
-            a.denom_exp += (a.int_c != 0);
-            b.denom_exp += (b.int_c != 0);
-
-            S.set_element(row1, static_cast<uint8_t>(col), a);
-            S.set_element(row2, static_cast<uint8_t>(col), b);
-
-            col_freq = SO6::col_frequency_signature(S, col);
-            col_sig = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-            S.hash = static_cast<uint16_t>(S.hash + col_sig);
-            S.col_hash = static_cast<uint16_t>(S.col_hash + col_sig);
-        }
-
-        S.canonical_form();
-        S.hash = static_cast<uint16_t>(S.hash
-            + SO6::row_frequency_signature(S, row1)
-            + SO6::row_frequency_signature(S, row2));
+        apply_inplace_T<Row1, Row2>(S);
         S.last_T = index;
         return S;
     }

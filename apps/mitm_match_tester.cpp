@@ -20,7 +20,7 @@
 
 #include "config/Globals.hpp"
 #include "so6/SO6.hpp"
-#include "so6/graph/LUT.hpp"
+#include "ds/LUT.hpp"
 #include "algo/Generate.hpp"
 
 namespace {
