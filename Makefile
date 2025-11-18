@@ -256,6 +256,13 @@ mitm_bench:
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
 		benchmarks/mitm_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
+# MITM runtime by optimal depth benchmark
+.PHONY: mitm_depth_bench
+mitm_depth_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/mitm_depth_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
 # MITM seed generator (offline script to precompute benchmark seeds)
 .PHONY: mitm_seed_gen
 mitm_seed_gen:
