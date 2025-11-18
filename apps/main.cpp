@@ -149,7 +149,7 @@ int main(int argc, char **argv)
         std::atomic<std::size_t> processed{0};
         const std::size_t update_every = std::max<std::size_t>(predicted_total / 200, 1024);
 
-        auto range = gen_set.dfs_extensions(dfs_depth);
+        auto range = gen_set.bfs_extensions(dfs_depth);
 
         tbb::parallel_for_each(range.begin(), range.end(), [&](const SO6& /*state*/){
             // No-op body for now; just count states to exercise the iterator in parallel

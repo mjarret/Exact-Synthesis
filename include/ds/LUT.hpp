@@ -343,6 +343,142 @@ public:
 
     DFSExtensionRange dfs_extensions(int max_depth) const { return DFSExtensionRange{ &lookupTable.back(), max_depth }; }
 
+    // -------- BFS (layer-by-layer) extensions over last layer (no insertion) --------
+    // Iterates first all depth-1 extensions of every leaf, then all depth-2, ... up to max_depth.
+    struct BFSExtensionRange {
+        const finalized_set* leaves;
+        int max_depth;
+
+        struct iterator {
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = SO6;
+            using difference_type = std::ptrdiff_t;
+            using pointer = const SO6*;
+            using reference = const SO6&;
+
+            iterator() : leaves_(nullptr), max_depth_(0), at_end_(true) {}
+
+            iterator(const finalized_set* leaves, int max_depth, bool begin)
+                : leaves_(leaves), max_depth_(max_depth), at_end_(!begin)
+            {
+                if (!begin || !leaves_ || leaves_->empty() || max_depth_ <= 0) { at_end_ = true; return; }
+                depth_ = 1; // start with length-1 extensions
+                leaf_it_ = leaves_->begin();
+                leaf_end_ = leaves_->end();
+                if (!prepare_first_for_leaf()) advance_to_next_valid();
+            }
+
+            value_type operator*() const { return current_; }
+
+            iterator& operator++() { advance(); return *this; }
+
+            bool operator==(const iterator& other) const {
+                if (at_end_ && other.at_end_) return true;
+                return leaves_ == other.leaves_ && at_end_ == other.at_end_
+                       && (at_end_ || (leaf_it_ == other.leaf_it_ && depth_ == other.depth_ && choice_ == other.choice_));
+            }
+            bool operator!=(const iterator& other) const { return !(*this == other); }
+
+        private:
+            static inline uint8_t next_candidate(uint8_t start, uint8_t forbid) {
+                uint8_t t = start;
+                if (t == forbid) ++t;
+                return (t < 15) ? t : static_cast<uint8_t>(255);
+            }
+
+            // Build the minimal (lexicographic) sequence for (leaf_it_, depth_)
+            bool prepare_first_for_leaf() {
+                if (leaf_it_ == leaf_end_) return false;
+                states_.clear(); states_.reserve(static_cast<size_t>(depth_) + 1);
+                choice_.clear(); choice_.reserve(static_cast<size_t>(depth_));
+                next_t_.clear(); next_t_.reserve(static_cast<size_t>(depth_));
+                states_.push_back(*leaf_it_);
+                for (int i = 0; i < depth_; ++i) {
+                    const uint8_t forbid = (i == 0) ? states_[0].last_T : choice_[static_cast<size_t>(i - 1)];
+                    uint8_t t = next_candidate(0, forbid);
+                    if (t == 255) return false; // should not happen (14 choices available)
+                    choice_.push_back(t);
+                    next_t_.push_back(static_cast<uint8_t>(t + 1));
+                    states_.push_back(T_OperatorRuntime(t) * states_.back());
+                }
+                current_ = states_.back();
+                return true;
+            }
+
+            // Increment the fixed-length sequence for the current leaf; return false if exhausted
+            bool increment_sequence_for_leaf() {
+                if (choice_.empty()) return false;
+                for (int i = depth_ - 1; i >= 0; --i) {
+                    const uint8_t forbid = (i == 0) ? states_[0].last_T : choice_[static_cast<size_t>(i - 1)];
+                    uint8_t start = next_t_[static_cast<size_t>(i)];
+                    uint8_t t = next_candidate(start, forbid);
+                    if (t == 255) continue; // need to carry
+                    // set choice[i] = t and reset tail to minimal
+                    choice_[static_cast<size_t>(i)] = t;
+                    next_t_[static_cast<size_t>(i)] = static_cast<uint8_t>(t + 1);
+                    // recompute state at i+1
+                    states_.resize(static_cast<size_t>(i + 1) + 1);
+                    states_[static_cast<size_t>(i + 1)] = T_OperatorRuntime(t) * states_[static_cast<size_t>(i)];
+                    // fill tail j = i+1..depth_-1 with minimal choices
+                    for (int j = i + 1; j < depth_; ++j) {
+                        const uint8_t forb = choice_[static_cast<size_t>(j - 1)];
+                        uint8_t tt = next_candidate(0, forb);
+                        choice_[static_cast<size_t>(j)] = tt;
+                        next_t_[static_cast<size_t>(j)] = static_cast<uint8_t>(tt + 1);
+                        if (static_cast<int>(states_.size()) == j + 1) states_.push_back(T_OperatorRuntime(tt) * states_[static_cast<size_t>(j)]);
+                        else states_[static_cast<size_t>(j + 1)] = T_OperatorRuntime(tt) * states_[static_cast<size_t>(j)];
+                    }
+                    current_ = states_.back();
+                    return true;
+                }
+                return false; // exhausted for this leaf
+            }
+
+            void advance_to_next_valid() {
+                while (true) {
+                    if (leaf_it_ != leaf_end_) {
+                        if (prepare_first_for_leaf()) { at_end_ = false; return; }
+                        ++leaf_it_;
+                        continue;
+                    }
+                    // end of leaves for this depth; advance depth
+                    if (depth_ >= max_depth_) { at_end_ = true; return; }
+                    ++depth_;
+                    leaf_it_ = leaves_->begin();
+                    if (leaf_it_ == leaf_end_) { at_end_ = true; return; }
+                    // loop to try first leaf at new depth
+                }
+            }
+
+            void advance() {
+                if (at_end_) return;
+                // Try next sequence for current leaf
+                if (increment_sequence_for_leaf()) return;
+                // Move to next leaf at same depth
+                ++leaf_it_;
+                advance_to_next_valid();
+            }
+
+            const finalized_set* leaves_;
+            finalized_set::const_iterator leaf_it_;
+            finalized_set::const_iterator leaf_end_;
+            int max_depth_;
+            int depth_{0};
+            bool at_end_{true};
+
+            // Per-leaf sequence state for fixed depth
+            std::vector<SO6> states_;
+            std::vector<uint8_t> choice_;
+            std::vector<uint8_t> next_t_;
+            SO6 current_{};
+        };
+
+        iterator begin() const { return iterator(leaves, max_depth, true); }
+        iterator end()   const { return iterator(); }
+    };
+
+    BFSExtensionRange bfs_extensions(int max_depth) const { return BFSExtensionRange{ &lookupTable.back(), max_depth }; }
+
     /**
      * @brief Brute-force depth-first extension matcher over the last layer (leaves).
      *
