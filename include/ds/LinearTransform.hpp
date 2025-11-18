@@ -76,43 +76,9 @@ inline uint8_t bitmask_from_rows(const std::array<uint8_t, K>& rows) {
 template<class K>
 inline __attribute__((always_inline))
 SO6& apply_inplace_row_kernel(SO6& S, const K& k) {
-    // Resolve rows_mask either as a static constexpr or via k.rows_mask()
-    uint8_t mask = 0;
-    if constexpr (detail::has_rows_mask_static<K>::value) {
-        mask = K::rows_mask_static;
-    } else if constexpr (detail::has_rows_mask_method<K>::value) {
-        mask = k.rows_mask();
-    } else {
-        static_assert(detail::has_rows_mask_static<K>::value || detail::has_rows_mask_method<K>::value,
-                      "Kernel must provide either static constexpr rows_mask_static or rows_mask() const");
-    }
-
-    // Subtract row signatures only for touched rows
-    for (uint8_t r = 0; r < 6; ++r)
-        if (mask & (1u << r))
-            S.hash = static_cast<uint16_t>(S.hash - SO6::row_frequency_signature(S, r));
-
-    for (uint8_t col = 0; col < 6; ++col) {
-        uint16_t col_freq = SO6::col_frequency_signature(S, col);
-        uint16_t col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-        S.hash     = static_cast<uint16_t>(S.hash - col_sig);
-        S.col_hash = static_cast<uint16_t>(S.col_hash - col_sig);
-
-        // Column-local linear algebra performed by kernel
-        k.transform_column(S, col);
-
-        col_freq = SO6::col_frequency_signature(S, col);
-        col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-        S.hash     = static_cast<uint16_t>(S.hash + col_sig);
-        S.col_hash = static_cast<uint16_t>(S.col_hash + col_sig);
-    }
-
+    for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col); 
     S.canonical_form();
-
-    for (uint8_t r = 0; r < 6; ++r)
-        if (mask & (1u << r))
-            S.hash = static_cast<uint16_t>(S.hash + SO6::row_frequency_signature(S, r));
-
+    S.recompute_hash();
     return S;
 }
 
@@ -194,32 +160,9 @@ private:
 
 // Runtime driver (type-erased)
 inline SO6& apply_inplace_any_kernel(SO6& S, const AnyKernel& k) {
-    uint8_t mask = k.rows_mask();
-
-    for (uint8_t r = 0; r < 6; ++r)
-        if (mask & (1u << r))
-            S.hash = static_cast<uint16_t>(S.hash - SO6::row_frequency_signature(S, r));
-
-    for (uint8_t col = 0; col < 6; ++col) {
-        uint16_t col_freq = SO6::col_frequency_signature(S, col);
-        uint16_t col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-        S.hash     = static_cast<uint16_t>(S.hash - col_sig);
-        S.col_hash = static_cast<uint16_t>(S.col_hash - col_sig);
-
-        k.transform_column(S, col);
-
-        col_freq = SO6::col_frequency_signature(S, col);
-        col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-        S.hash     = static_cast<uint16_t>(S.hash + col_sig);
-        S.col_hash = static_cast<uint16_t>(S.col_hash + col_sig);
-    }
-
+    for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col);
     S.canonical_form();
-
-    for (uint8_t r = 0; r < 6; ++r)
-        if (mask & (1u << r))
-            S.hash = static_cast<uint16_t>(S.hash + SO6::row_frequency_signature(S, r));
-
+    S.recompute_hash();
     return S;
 }
 
@@ -488,34 +431,13 @@ public:
     }
 
     inline SO6& apply_inplace(SO6& S) const {
-        // Remove row signatures for all rows touched by any op
-        for (uint8_t r = 0; r < 6; ++r)
-            if (mask_ & (1u << r))
-                S.hash = static_cast<uint16_t>(S.hash - SO6::row_frequency_signature(S, r));
-
         for (uint8_t col = 0; col < 6; ++col) {
-            uint16_t col_freq = SO6::col_frequency_signature(S, col);
-            uint16_t col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-            S.hash     = static_cast<uint16_t>(S.hash - col_sig);
-            S.col_hash = static_cast<uint16_t>(S.col_hash - col_sig);
-
-            // All kernels in one pass over this column
             for (uint8_t i = 0; i < size_; ++i) {
                 ops_[i].transform_column(S, col);
             }
-
-            col_freq = SO6::col_frequency_signature(S, col);
-            col_sig  = static_cast<uint16_t>(col_freq ^ (col_freq >> 1));
-            S.hash     = static_cast<uint16_t>(S.hash + col_sig);
-            S.col_hash = static_cast<uint16_t>(S.col_hash + col_sig);
         }
-
-        S.canonical_form();
-
-        for (uint8_t r = 0; r < 6; ++r)
-            if (mask_ & (1u << r))
-                S.hash = static_cast<uint16_t>(S.hash + SO6::row_frequency_signature(S, r));
-
+        S.canonical_form();        
+        S.recompute_hash();
         return S;
     }
 
@@ -608,6 +530,51 @@ inline RowPairLinear make_T_rowpair(uint8_t r1, uint8_t r2) {
     k.m10 = Z2{1};
     k.m11 = Z2(static_cast<uint8_t>(-1), static_cast<uint8_t>(0), static_cast<uint8_t>(0));
     return k;
+}
+
+// -----------------------------------------------------------------------------
+// 9) Convert a discovered SO6 into a LinearTransform
+// -----------------------------------------------------------------------------
+
+// Dense K=6 row-block that left-multiplies by L for each column (y = L * x).
+inline RowBlockLinear<6> make_dense_leftop(const SO6& L) {
+    RowBlockLinear<6> op;
+    for (int i = 0; i < 6; ++i) op.rows[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 6; ++j) {
+            op.M[i][j] = L.get_element(static_cast<uint8_t>(i), static_cast<uint8_t>(j));
+        }
+    }
+    return op;
+}
+
+// Sparse CSR left-op built from all non-zero entries of L.
+inline CSRLeftOp make_csr_leftop(const SO6& L) {
+    CSRLeftOp op;
+    // All 6 rows are targets
+    for (uint8_t i = 0; i < 6; ++i) op.targets[i] = i;
+    op.num_targets = 6;
+    op.row_ptr[0] = 0;
+    uint8_t nnz = 0;
+    for (uint8_t i = 0; i < 6; ++i) {
+        for (uint8_t j = 0; j < 6; ++j) {
+            Z2 v = L.get_element(i, j);
+            if (v.int_c == 0) continue;
+            op.col_idx[nnz] = j;
+            op.val[nnz]     = v;
+            ++nnz;
+        }
+        op.row_ptr[i + 1] = nnz;
+    }
+    return op;
+}
+
+// AnyKernel wrappers for convenience
+inline AnyKernel make_any_dense_leftop(const SO6& L) {
+    return make_any(make_dense_leftop(L));
+}
+inline AnyKernel make_any_csr_leftop(const SO6& L) {
+    return make_any(make_csr_leftop(L));
 }
 
  

@@ -66,13 +66,15 @@ ifeq ($(COMPILER),clang)
 endif
 
 # Source Files
-SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp
+SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp
 OBJ := $(SRC:.cpp=.o)
 
 # Standalone app object files (built on demand)
 APP_OBJ := \
   apps/hash_recompute_tester.o \
   apps/mitm_match_tester.o \
+  apps/lut_history_tester.o \
+  apps/canonical_form_print.o \
   apps/self_inverse_tester.o \
   apps/pair_distance_tester.o
 
@@ -84,7 +86,7 @@ DEBUG_CXXFLAGS := -g
 DEBUG_LDFLAGS := -ltcmalloc
 
 # Binaries produced by this workspace
-BINARIES := $(TARGET) hash_tester mitm_tester self_tester pair_tester
+BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester
 
 # Default Rule
 all: $(TARGET)
@@ -101,10 +103,13 @@ apps/hash_recompute_tester.o: apps/hash_recompute_tester.cpp
 
 # MITM match tester (standalone)
 .PHONY: mitm_tester
-mitm_tester: apps/mitm_match_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
+mitm_tester: apps/mitm_match_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o src/MITM.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/mitm_match_tester.o: apps/mitm_match_tester.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+apps/lut_history_tester.o: apps/lut_history_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Self-inverse tester (standalone)
@@ -181,6 +186,19 @@ pair_tester: apps/pair_distance_tester.o src/SO6.o src/algo/Generate.o src/T_Ope
 
 apps/pair_distance_tester.o: apps/pair_distance_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# Canonical form print tester (standalone)
+.PHONY: canonical_form_print
+canonical_form_print: apps/canonical_form_print.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/T_Operator.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
+
+apps/canonical_form_print.o: apps/canonical_form_print.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# LUT path/history tester (standalone)
+.PHONY: lut_history_tester
+lut_history_tester: apps/lut_history_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 # Google Benchmark target for Lehmer6 (requires libbenchmark-dev)
 .PHONY: lehmer_bench
 lehmer_bench: benchmarks/lehmer6_bench.o
@@ -230,3 +248,17 @@ cycle_build_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS -DDS_ENUM_CYCLE=1 \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+# MITM meet-in-the-middle benchmark on random targets
+.PHONY: mitm_bench
+mitm_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/mitm_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+# MITM seed generator (offline script to precompute benchmark seeds)
+.PHONY: mitm_seed_gen
+mitm_seed_gen:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/mitm_seed_gen.cpp -o $@ $(LDFLAGS)

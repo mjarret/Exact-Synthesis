@@ -14,7 +14,7 @@ namespace algo {
 // Helper: expand all T-neighbors for a single SO6 element S, inserting into 'next'.
 // Skips repeating the last T used to reach S and respects an optional stop predicate.
 // Updates local_counter once per T tried and records the first stop hit in winner_value.
-static void add_new_neighbors_for(const SO6& S, const finalized_set& prior, tbb::concurrent_unordered_set<SO6>& next, const std::function<bool(const SO6&)>& stop_pred,
+static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unordered_set<SO6>& next, const std::function<bool(const SO6&)>& stop_pred,
     std::atomic<bool>& should_stop, std::atomic_flag& winner_claimed,
     SO6& winner_value)
 {
@@ -22,7 +22,8 @@ static void add_new_neighbors_for(const SO6& S, const finalized_set& prior, tbb:
     for (uint8_t T = 0; T < 15 && !should_stop.load(std::memory_order_relaxed); ++T) {
         if (T == last_T) continue;
         SO6 toInsert = T_OperatorRuntime(T) * S;
-        if (prior.find(toInsert) == prior.end()) {
+        // Deduplicate against all finalized layers, not just the immediate prior.
+        if (lut.find(toInsert) == lut.back().end()) {
             auto ins = next.insert(toInsert);
             if (stop_pred && ins.second && stop_pred(toInsert)) {
                 should_stop.store(true, std::memory_order_relaxed);
@@ -38,7 +39,6 @@ namespace algo {
 
 tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::ProgressTracker* bars, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {
     auto& current = gen_set.current();
-    auto& prior = gen_set.prior();
     tbb::concurrent_unordered_set<SO6> next;
 
     std::atomic<size_t> global_counter{0};
@@ -54,7 +54,7 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::Pr
             if (should_stop.load(std::memory_order_relaxed)) return;
             auto& local_counter = local_counters.local();
 
-            add_new_neighbors_for(S, prior, next, stop_pred, should_stop, winner_claimed, winner_value);
+            add_new_neighbors_for(S, gen_set, next, stop_pred, should_stop, winner_claimed, winner_value);
             ++local_counter; 
 
             if (local_counter >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) {

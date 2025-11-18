@@ -202,6 +202,14 @@ public:
         for (int i = 0; i < 6; ++i) arr[i] = tmp[i];
     }
 
+    // Inverse permutation: p_inv such that p_inv[p[i]] = i.
+    Lehmer6 inverse() const {
+        auto p = to_array();
+        std::array<uint8_t,6> inv{};
+        for (uint8_t i = 0; i < 6; ++i) inv[p[i]] = i;
+        return Lehmer6::from_perm(inv);
+    }
+
     // ----- Iteration -----
 
     // Steps to the next rank; returns false on wrap-around (after 719 -> 0).
@@ -244,6 +252,18 @@ public:
 
     friend bool operator==(const Lehmer6& a, const Lehmer6& b) { return a.code_ == b.code_; }
     friend bool operator!=(const Lehmer6& a, const Lehmer6& b) { return !(a == b); }
+
+    // Composition: applies the left-hand permutation to the right-hand permutation.
+    // Result r satisfies r[i] = lhs[rhs[i]] for i in 0..5.
+    friend inline Lehmer6 operator*(const Lehmer6& lhs, const Lehmer6& rhs) {
+        std::array<uint8_t, 6> out{};
+        const auto& L = Lehmer6::decode_ref(lhs.bits());
+        const auto& R = Lehmer6::decode_ref(rhs.bits());
+        for (int i = 0; i < 6; ++i) {
+            out[static_cast<size_t>(i)] = L[static_cast<size_t>(R[static_cast<size_t>(i)])];
+        }
+        return Lehmer6::from_perm(out);
+    }
 
     friend std::ostream& operator<<(std::ostream& os, const Lehmer6& p) {
         auto a = p.to_array();

@@ -27,6 +27,7 @@
 #include <span>
 #include <concepts>
 #include <utility>
+#include <ostream>
 #include "sort/sort6.hpp"
 #include "Z2.hpp"
 #include "ds/SmallFreqMap.hpp"
@@ -165,14 +166,12 @@ public:
                   std::convertible_to<decltype(std::declval<const Row&>()[5]), uint8_t> &&
                   std::convertible_to<decltype(std::declval<const Col&>()[0]), uint8_t> &&
                   std::convertible_to<decltype(std::declval<const Col&>()[5]), uint8_t>)
-        inline bool is_better_permutation(const Row& cand_row,
-                                          const Col& cand_col,
-                                          const uint16_t sign_perm) {
+        inline bool is_better_permutation(const Row& cand_row, const Col& cand_col, const uint16_t sign_perm) {
             uint8_t row_a[6];
             uint8_t col_a[6];
             for (int i = 0; i < 6; ++i) {
-                row_a[i] = static_cast<uint8_t>(cand_row[static_cast<std::size_t>(i)]);
-                col_a[i] = static_cast<uint8_t>(cand_col[static_cast<std::size_t>(i)]);
+                row_a[i] = static_cast<uint8_t>(cand_row[i]);
+                col_a[i] = static_cast<uint8_t>(cand_col[i]);
             }
             // Force resolution to the pointer overload, avoiding recursion
             // back into this template for array arguments.
@@ -182,6 +181,18 @@ public:
 
         /// Transform into canonical form (updates permutations and sign convention).
         void canonical_form();
+
+        // Debug/inspection helpers
+        void print_raw(std::ostream& os) const;
+        void print_with_perms(std::ostream& os) const;
+
+        /// Materialize the canonical view (perms/sign) into raw storage and return it.
+        /// The returned SO6 has identity row/col perms and zero sign_convention.
+        SO6 materialize_canonical() const;
+
+        /// Column sign mask: bit c is 0 if the top non-zero element in column c has int_c > 0,
+        /// and 1 if that top non-zero element has int_c < 0. Columns with all zeros contribute 0.
+        uint8_t col_sign() const;
         
         // ---------- Frequency bookkeeping ----------
         // No stored row/column frequency maps in the simplified policy.
@@ -190,54 +201,66 @@ public:
         static inline uint16_t row_frequency_signature(const SO6& s, int row) {
             std::array<Z2, 6> vals{};
             for (int c = 0; c < 6; ++c) vals[c] = std::abs(s.get_element(row, c));
-            return signature_from_sorted(vals);
+            return signature(vals);
         }
 
         static inline uint16_t col_frequency_signature(const SO6& s, int col) {
             std::array<Z2, 6> vals{};
             for (int r = 0; r < 6; ++r) vals[r] = std::abs(s.get_element(r, col));
-            return signature_from_sorted(vals);
+            return signature(vals);
         }
 
-        static inline uint16_t signature_from_sorted(std::array<Z2, 6>& vals) {
-            auto comp = [](const Z2& a, const Z2& b){ return a.data < b.data; };
-            sort6::sorting_network_dispatch(vals, comp);
+        static inline uint16_t signature(std::array<Z2, 6>& vals) {
             size_t acc = 0;
-            int i = 0;
-            while (i < 6) {
-                int j = i + 1;
-                while (j < 6 && vals[j].data == vals[i].data) ++j;
-                size_t h = z_freq_hash(vals[i], j-i);
+            uint8_t seen = 0;                    // bit i == 1 -> vals[i] already accounted for
+
+            for (int i = 0; i < 6; ++i) {
+                const uint8_t bit_i = uint8_t(1u << i);
+                if (seen & bit_i) continue;
+
+                // Start a new group with leader i
+                seen |= bit_i;
+                int cnt = 1;
+
+                const auto& leader = vals[i];
+                const auto leader_key = leader.data;   // pull once; helps compilers keep it in a register
+
+                // Count duplicates of leader among the remaining elements
+                for (int j = i + 1; j < 6; ++j) {
+                    const uint8_t bit_j = uint8_t(1u << j);
+                    // (seen check is cheap and removes re-visiting already grouped items)
+                    if (!(seen & bit_j) && vals[j].data == leader_key) {
+                        seen |= bit_j;
+                        ++cnt;
+                    }
+                }
+
+                // One call per distinct value with its frequency
+                const uint16_t h = z_freq_hash(leader, cnt);
                 acc += h + h * h;
-                i = j;
             }
+
+            // same light finalization you had
             acc ^= acc >> 3;
             acc ^= acc >> 1;
-            return acc;
+            return static_cast<uint16_t>(acc);   
         }
 
         // ---------- Hash helpers ----------
         /// Hash a single (Z2, count) contribution using the configured policy.
-        static inline size_t z_freq_hash(const Z2 z, const int i) {
-            auto mix64_variant = [](uint64_t x) {
-                x ^= x >> 12;
-                x ^= x << 25;
-                x ^= x >> 27;
-                x *= 0x2545F4914F6CDD1DULL;
+        static inline uint16_t z_freq_hash(const Z2 z, const int i) {
+            constexpr auto mix64_variant = [](uint16_t x) {
+                x ^= x >> 5;
                 return x;
             };
-            const uint64_t seed = (static_cast<uint64_t>(std::hash<Z2>{}(std::abs(z))) << 3)
-                                | static_cast<uint64_t>(i & 0x7);
-            return static_cast<size_t>(mix64_variant(seed));
+            uint16_t seed = (std::hash<Z2>{}(std::abs(z)) << 3) | (i & 0x7);
+            return mix64_variant(seed);
         }
         /// Combine all entries of a SmallFreqMap into a stable signature.
-        static inline size_t frequency_hash(const FrequencyMap& f);
+        // static inline size_t frequency_hash(const FrequencyMap& f);
         /// Report the current sizeof(SO6) in bytes (compile-time constant)
         static constexpr std::size_t size_bytes() { return sizeof(SO6); }
 };
-
-// Inline definitions split out for clarity (no logic changes)
-#include "so6/Signatures.inl"
 
 namespace std {
     template <>

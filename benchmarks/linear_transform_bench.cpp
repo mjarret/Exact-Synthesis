@@ -181,6 +181,114 @@ static void BM_Abstraction_Pipeline1(benchmark::State& state) {
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * 36);
 }
 
+template<int N>
+static void BM_Fused(benchmark::State& st) {
+  const SO6& orig = OrigForPair<0,1>();
+  Pipeline<8> P;
+  for (int i=0; i<N; ++i) P.push(make_any(RowPairTKernel{0,1}));
+  for (auto _ : st) {
+    SO6 S = orig;
+    benchmark::DoNotOptimize(S);
+    P.apply_inplace(S);
+    benchmark::ClobberMemory();
+  }
+}
+
+template<int N>
+static void BM_Sequential(benchmark::State& st) {
+  const SO6& orig = OrigForPair<0,1>();
+  for (auto _ : st) {
+    SO6 S = orig;
+    benchmark::DoNotOptimize(S);
+    for (int i=0; i<N; ++i) apply_inplace_T<0,1>(S);
+    benchmark::ClobberMemory();
+  }
+}
+BENCHMARK_TEMPLATE(BM_Fused, 1);
+BENCHMARK_TEMPLATE(BM_Fused, 2);
+BENCHMARK_TEMPLATE(BM_Fused, 4);
+BENCHMARK_TEMPLATE(BM_Fused, 8);
+BENCHMARK_TEMPLATE(BM_Sequential, 1);
+BENCHMARK_TEMPLATE(BM_Sequential, 2);
+BENCHMARK_TEMPLATE(BM_Sequential, 4);
+BENCHMARK_TEMPLATE(BM_Sequential, 8);
+
+// -------- Fused vs. equivalent matrix multiply (row pair 0,1) --------
+
+template<int N>
+static const SO6& OpMatForPair01() {
+    static SO6 op = [](){
+        SO6 m = SO6::identity();
+        for (int i = 0; i < N; ++i) {
+            apply_inplace_T<0,1>(m);
+        }
+        return m;
+    }();
+    return op;
+}
+
+template<int N>
+static const Pipeline<16>& FusedPipeline01() {
+    static Pipeline<16> P = []{
+        Pipeline<16> p;
+        for (int i = 0; i < N; ++i) p.push(make_any(RowPairTKernel{0,1}));
+        return p;
+    }();
+    return P;
+}
+
+template<int N>
+static void VerifyFusedVsMatmul() {
+    const SO6& orig = OrigForPair<0,1>();
+    SO6 fused = orig;
+    SO6 matmul_target = orig;
+
+    FusedPipeline01<N>().apply_inplace(fused);
+    matmul_target = OpMatForPair01<N>() * matmul_target;
+    matmul_target.canonical_form();
+    matmul_target.recompute_hash();
+
+    auto equal = [&](const SO6& a, const SO6& b) {
+        for (uint8_t r = 0; r < 6; ++r)
+            for (uint8_t c = 0; c < 6; ++c)
+                if (!(a.get_element(r, c) == b.get_element(r, c))) return false;
+        return true;
+    };
+    if (!equal(fused, matmul_target)) {
+        fprintf(stderr, "Fused vs matmul mismatch for N=%d\n", N);
+        std::abort();
+    }
+}
+
+template<int N>
+static void BM_Fused_vs_Matmul(benchmark::State& st) {
+    static bool verified = (VerifyFusedVsMatmul<N>(), true);
+    (void)verified;
+    const SO6& orig = OrigForPair<0,1>();
+    const auto& P = FusedPipeline01<N>();
+    const SO6& op = OpMatForPair01<N>();
+    for (auto _ : st) {
+        SO6 fused = orig;
+        SO6 mul   = orig;
+
+        benchmark::DoNotOptimize(fused);
+        P.apply_inplace(fused);
+        benchmark::ClobberMemory();
+
+        benchmark::DoNotOptimize(mul);
+        mul = op * mul;
+        mul.canonical_form();
+        mul.recompute_hash();
+        benchmark::ClobberMemory();
+    }
+    st.SetItemsProcessed(static_cast<int64_t>(st.iterations()) * 36);
+}
+
+BENCHMARK_TEMPLATE(BM_Fused_vs_Matmul, 1);
+BENCHMARK_TEMPLATE(BM_Fused_vs_Matmul, 2);
+BENCHMARK_TEMPLATE(BM_Fused_vs_Matmul, 4);
+BENCHMARK_TEMPLATE(BM_Fused_vs_Matmul, 8);
+
 // ---------------------- Instantiate for all 15 row pairs ----------------------
 
 #define INSTANTIATE_PAIR(R1, R2) \

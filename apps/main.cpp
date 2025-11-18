@@ -6,12 +6,7 @@
  * iterates across layers with parallel progress reporting.
  */
 
-#include <tbb/task_group.h>
-#include <tbb/parallel_for_each.h>
-#include <tbb/enumerable_thread_specific.h>
 #include <tbb/global_control.h>
-#include <util/progress_tracker.hpp>
-#include <atomic>
 #include <iomanip>
 #include <fstream>
 #include <cstdlib>
@@ -21,9 +16,7 @@
 #include "ds/LUT.hpp" // Rooted SO6 BFS/LUT
 #include "util/io_utils.hpp"
 #include "algo/Generate.hpp"
-#include <fstream>
 #include <string>
-#include <sstream>
 #include <thread>
 
 namespace {

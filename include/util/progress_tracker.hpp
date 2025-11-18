@@ -20,7 +20,7 @@ namespace indicators {
     class ProgressTracker {
     public:
         size_t total_work = 100;
-        ProgressTracker(int, size_t, size_t) {}
+        ProgressTracker(int, size_t, size_t, const std::string& = "") {}
         void complete(size_t) {}
         inline void set_progress(size_t, size_t) {}
         inline void on_finalize_started(size_t) {}
@@ -71,11 +71,12 @@ namespace indicators {
         static inline size_t rss_bytes() { return getProcessRSSBytes(); }
 
         // v1-style main bar
-        size_t add_job_to_tracker(int t_count, size_t total_work) {
+        size_t add_job_to_tracker(int t_count, size_t total_work, const std::string& label) {
             std::ostringstream ss;
             ss << std::left << std::setw(7) << std::min(t_count + 1, 9999) << std::setfill(' ');
             std::string formatted_count = ss.str();
             auto terminal_width = indicators::terminal_size().second;
+            std::string prefix = label.empty() ? "T= " + formatted_count : label + " T= " + formatted_count;
             auto bar = std::make_unique<indicators::ProgressBar>(
                 indicators::option::BarWidth{terminal_width - 80},
                 indicators::option::ForegroundColor{indicators::Color::green},
@@ -83,7 +84,7 @@ namespace indicators {
                 indicators::option::ShowRemainingTime{true},
                 indicators::option::ShowPercentage{true},
                 indicators::option::MaxProgress{total_work},
-                indicators::option::PrefixText{"T= " + formatted_count},
+                indicators::option::PrefixText{prefix},
                 indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}}
             );
             return bars_.push_back(std::move(bar));
@@ -139,7 +140,7 @@ namespace indicators {
     public:
         size_t total_work = 100;
 
-        ProgressTracker(int current_t_count, size_t total_work_ = 100, size_t matrix_counter_ = 15) {
+        ProgressTracker(int current_t_count, size_t total_work_ = 100, size_t matrix_counter_ = 15, const std::string& label = "") {
             total_work = total_work_;
             total_work_local = total_work_;
             start_time = std::chrono::high_resolution_clock::now();
@@ -158,7 +159,7 @@ namespace indicators {
             // Only show bars for the current T; hide completed bars to avoid re-printing
             bars_.set_option(indicators::option::HideBarWhenComplete{true});
 
-            main_idx = add_job_to_tracker(current_t_count, total_work);
+            main_idx = add_job_to_tracker(current_t_count, total_work, label);
 
             predicted_mats = g_prev_matrices_found ? g_prev_matrices_found * 8 : 0;
             find_idx = add_find_tracker(predicted_mats ? predicted_mats : matrix_counter_);

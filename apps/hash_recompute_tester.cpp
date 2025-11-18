@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 
     // Gather elements from all finalized layers
     std::vector<SO6> pool;
-    for (const auto& layer : lut) {
+    for (const auto& layer : lut.layers()) {
         pool.insert(pool.end(), layer.begin(), layer.end());
         if (static_cast<int>(pool.size()) >= args.samples) break; // fast path if early layers suffice
     }

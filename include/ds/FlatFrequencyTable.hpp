@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <array>
 #include <unordered_map>
+#include <mutex>
 #include <vector>
 #include <cstring>
 #include <algorithm>
@@ -78,32 +79,36 @@ public:
             key |= (static_cast<uint64_t>(entries_[i].second.size()) & 0xFFull) << (8 * (i + 1));
         }
         auto &cache = lut_cache();
-        auto it = cache.find(key);
-        if (it == cache.end()) {
-            LUT lut; // default len = 0
-            // compute factorial per block and total states
-            uint16_t facts[6]{};
-            uint32_t total = 1;
-            for (uint8_t i = 0; i < nb; ++i) {
-                const uint8_t k = entries_[i].second.size();
-                const uint16_t f = order6::FACT[k];
-                facts[i] = f;
-                total *= f;
-            }
-            if (total > 1u) {
-                lut.len = static_cast<uint16_t>(total - 1u);
-                uint16_t ranks[6]{};
-                for (uint16_t step = 0; step < lut.len; ++step) {
-                    uint8_t adv = 0;
-                    while (adv < nb && static_cast<uint32_t>(ranks[adv]) + 1u == facts[adv]) ++adv;
-                    lut.adv_idx[step] = adv;
-                    for (uint8_t j = 0; j < adv; ++j) ranks[j] = 0;
-                    ++ranks[adv];
+        {
+            std::lock_guard<std::mutex> lk(lut_cache_mutex());
+            auto it = cache.find(key);
+            if (it == cache.end()) {
+                LUT lut; // default len = 0
+                // compute factorial per block and total states
+                uint16_t facts[6]{};
+                uint32_t total = 1;
+                for (uint8_t i = 0; i < nb; ++i) {
+                    const uint8_t k = entries_[i].second.size();
+                    const uint16_t f = order6::FACT[k];
+                    facts[i] = f;
+                    total *= f;
                 }
+                if (total > 1u) {
+                    lut.len = static_cast<uint16_t>(total - 1u);
+                    uint16_t ranks[6]{};
+                    for (uint16_t step = 0; step < lut.len; ++step) {
+                        uint8_t adv = 0;
+                        while (adv < nb && static_cast<uint32_t>(ranks[adv]) + 1u == facts[adv]) ++adv;
+                        lut.adv_idx[step] = adv;
+                        for (uint8_t j = 0; j < adv; ++j) ranks[j] = 0;
+                        ++ranks[adv];
+                    }
+                }
+                auto ins = cache.emplace(key, std::move(lut));
+                it = ins.first;
             }
-            it = cache.emplace(key, lut).first;
+            lut_ = &it->second;
         }
-        lut_ = &it->second;
         lut_pos_ = 0;
     }
 
@@ -208,6 +213,9 @@ private:
     struct LUT { std::array<uint8_t, 720> adv_idx{}; uint16_t len{0}; };
     static inline std::unordered_map<uint64_t, LUT>& lut_cache() {
         static std::unordered_map<uint64_t, LUT> cache; return cache;
+    }
+    static inline std::mutex& lut_cache_mutex() {
+        static std::mutex mtx; return mtx;
     }
     const LUT* lut_{nullptr};
     uint16_t lut_pos_{0};

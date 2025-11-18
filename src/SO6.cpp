@@ -47,8 +47,8 @@ namespace {
             if (comp2 == Equal) return Less;
             const uint8_t fsm = static_cast<uint8_t>((first_sign_mask  >> i) & utils::BITS);
             const uint8_t ssm = static_cast<uint8_t>((second_sign_mask >> i) & utils::BITS);
-            if ((comp1 == Less) ^ (fsm == utils::NEG)) first_sign_mask  ^= 0x3Fu;
-            if ((comp2 == Less) ^ (ssm == utils::NEG)) second_sign_mask ^= 0x3Fu;
+            if ((comp1 == Less) ^ (fsm == 1)) first_sign_mask  ^= 0x3Fu;
+            if ((comp2 == Less) ^ (ssm == 1)) second_sign_mask ^= 0x3Fu;
             break;
         }
 
@@ -209,11 +209,10 @@ bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col
 // canonicalization and equivalence class helpers moved to src/algo/Canonicalizer.cpp
 
 const std::strong_ordering SO6::operator<=>(const SO6 &other) const
-{   
+{
     std::strong_ordering comp = col_hash <=> other.col_hash;
-    // return comp;
 
-    if (comp == Equal) {   
+    if (comp == Equal) {
         // Decode only for comparison from Lehmer6: build raw arrays via operator[]
         uint8_t this_row_a[6];
         uint8_t this_col_a[6];
@@ -257,3 +256,78 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
 }
 
 // Stream operator<< for SO6 removed (unused)
+
+void SO6::print_raw(std::ostream& os) const {
+    for (int r = 0; r < 6; ++r) {
+        os << "[";
+        for (int c = 0; c < 6; ++c) {
+            const auto v = get_element(r,c);
+            os << v;
+            if (c != 5) os << " ";
+        }
+        os << "]";
+        if (r != 5) os << "\n";
+    }
+}
+
+void SO6::print_with_perms(std::ostream& os) const {
+    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh_.bits());
+    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh_.bits());
+    int count_r = 0;
+    uint8_t col_sign_mask = col_sign();
+    for (auto src_row : row_perm) {
+        os << "[";
+        bool row_neg = ((sign_convention >> src_row) & 1u) != 0;
+        int count_c = 0;
+        for (auto src_col : col_perm) {
+            bool col_neg = ((col_sign_mask >> src_col) & 1u) != 0;
+            auto v = get_element(src_row, src_col);
+            if (row_neg^col_neg) v = -v;
+            os << v;
+            if (count_c != 5) os << " ";
+            count_c++;
+        }
+        os << "]";
+        if (count_r != 5) os << "\n";
+        count_r++;
+    }
+}
+
+SO6 SO6::materialize_canonical() const {
+    SO6 out;
+    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh_.bits());
+    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh_.bits());
+    for (uint8_t r = 0; r < 6; ++r) {
+        uint8_t src_row = row_perm[r];
+        bool row_neg = ((sign_convention >> src_row) & 1u) != 0;
+        for (uint8_t c = 0; c < 6; ++c) {
+            uint8_t src_col = col_perm[c];
+            auto v = get_element(src_row, src_col);
+            if (row_neg) v = -v;
+            out.set_element(r, c, v);
+        }
+    }
+    out.sign_convention = 0;
+    out.row_perm_lh_ = Lehmer6(); // identity
+    out.col_perm_lh_ = Lehmer6(); // identity
+    out.last_T = last_T;
+    out.recompute_hash();
+    return out;
+}
+
+uint8_t SO6::col_sign() const {
+    uint8_t mask = 0;
+    for (uint8_t c = 0; c < 6; ++c) {
+        for (auto r : row_perm_lh_.to_array()) {
+            Z2 v = get_element(r,c);
+            if (v > 0) {
+                // bit remains 0 for positive
+                break;
+            } else if (v < 0) {
+                mask |= static_cast<uint8_t>(1u << c);
+                break;
+            }
+        }
+    }
+    return mask;
+}
