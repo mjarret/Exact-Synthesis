@@ -196,6 +196,153 @@ public:
     ElementIterator begin() const { return ElementIterator(&lookupTable, 0); }
     ElementIterator end() const { return ElementIterator(&lookupTable, lookupTable.size()); }
 
+    // -------- DFS extensions over last layer (no insertion) --------
+    // Iterate all elements reachable from the last finalized layer by applying
+    // T sequences up to length `max_depth`, disallowing repeating the previous
+    // T index (i.e., each step's T != last_T of the source). Yields SO6 by value.
+    struct DFSExtensionRange {
+        const finalized_set* leaves;
+        int max_depth;
+
+        struct iterator {
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = SO6;
+            using difference_type = std::ptrdiff_t;
+            using pointer = const SO6*;
+            using reference = const SO6&;
+
+            // Sentinel/end constructor
+            iterator() : leaves_(nullptr), max_depth_(0), at_end_(true) {}
+
+            iterator(const finalized_set* leaves, int max_depth, bool begin)
+                : leaves_(leaves), max_depth_(max_depth), at_end_(false)
+            {
+                leaf_it_ = leaves_->begin();
+                leaf_end_ = leaves_->end();
+                if (!begin || leaf_it_ == leaf_end_ || max_depth_ <= 0) {
+                    at_end_ = true; return;
+                }
+                // Initialize first leaf and produce its first child
+                reset_leaf();
+                if (!advance_first_child()) move_to_next_leaf();
+            }
+
+            // Deref: return current generated state by value (safe for TBB)
+            value_type operator*() const { return current_; }
+
+            iterator& operator++() {
+                advance();
+                return *this;
+            }
+
+            bool operator==(const iterator& other) const {
+                if (at_end_ && other.at_end_) return true;
+                return leaves_ == other.leaves_ && at_end_ == other.at_end_
+                       && (at_end_ || (leaf_it_ == other.leaf_it_ && choice_ == other.choice_));
+            }
+            bool operator!=(const iterator& other) const { return !(*this == other); }
+
+        private:
+            // Setup for current leaf
+            void reset_leaf() {
+                states_.clear(); states_.reserve(static_cast<size_t>(max_depth_) + 1);
+                choice_.clear(); choice_.reserve(static_cast<size_t>(max_depth_));
+                next_t_.clear(); next_t_.reserve(static_cast<size_t>(max_depth_));
+                states_.push_back(*leaf_it_); // depth 0 state = leaf
+            }
+
+            static inline uint8_t next_candidate(uint8_t start, uint8_t forbid) {
+                uint8_t t = start;
+                if (t == forbid) ++t;
+                return (t < 15) ? t : static_cast<uint8_t>(255);
+            }
+
+            // Push first child for this leaf
+            bool advance_first_child() {
+                const uint8_t forbid = states_[0].last_T;
+                uint8_t t = next_candidate(0, forbid);
+                if (t == 255) return false;
+                choice_.push_back(t);
+                next_t_.push_back(static_cast<uint8_t>(t + 1));
+                states_.push_back(T_OperatorRuntime(t) * states_.back());
+                current_ = states_.back();
+                return true;
+            }
+
+            // Try to deepen one level from current depth
+            bool try_deepen() {
+                if (static_cast<int>(choice_.size()) >= max_depth_) return false;
+                const int d = static_cast<int>(choice_.size());
+                const uint8_t forbid = (d == 0) ? states_[0].last_T : choice_[static_cast<size_t>(d - 1)];
+                uint8_t t = next_candidate(0, forbid);
+                if (t == 255) return false;
+                choice_.push_back(t);
+                next_t_.push_back(static_cast<uint8_t>(t + 1));
+                states_.push_back(T_OperatorRuntime(t) * states_.back());
+                current_ = states_.back();
+                return true;
+            }
+
+            // Try to increment at current depth; if exhausted, pop and continue
+            bool try_increment_or_backtrack() {
+                while (!choice_.empty()) {
+                    const int d = static_cast<int>(choice_.size()) - 1;
+                    const uint8_t forbid = (d == 0) ? states_[0].last_T : choice_[static_cast<size_t>(d - 1)];
+                    uint8_t start = next_t_[static_cast<size_t>(d)];
+                    uint8_t t = next_candidate(start, forbid);
+                    if (t != 255) {
+                        // Found next sibling at this depth
+                        choice_[static_cast<size_t>(d)] = t;
+                        next_t_[static_cast<size_t>(d)] = static_cast<uint8_t>(t + 1);
+                        // Recompute state[d+1] from state[d]
+                        states_.back() = T_OperatorRuntime(t) * states_[static_cast<size_t>(d)];
+                        current_ = states_.back();
+                        return true;
+                    }
+                    // Exhausted at this depth; backtrack
+                    choice_.pop_back();
+                    next_t_.pop_back();
+                    states_.pop_back();
+                }
+                return false;
+            }
+
+            void move_to_next_leaf() {
+                while (true) {
+                    if (leaf_it_ == leaf_end_) { at_end_ = true; return; }
+                    ++leaf_it_;
+                    if (leaf_it_ == leaf_end_) { at_end_ = true; return; }
+                    reset_leaf();
+                    if (advance_first_child()) { at_end_ = false; return; }
+                }
+            }
+
+            void advance() {
+                // Depth-first order: after yielding a node, try to deepen; if not possible, try siblings; otherwise move to next leaf.
+                if (try_deepen()) return;
+                if (try_increment_or_backtrack()) return;
+                move_to_next_leaf();
+            }
+
+            const finalized_set* leaves_;
+            finalized_set::const_iterator leaf_it_;
+            finalized_set::const_iterator leaf_end_;
+            int max_depth_;
+            bool at_end_;
+
+            // Per-leaf DFS state
+            std::vector<SO6> states_;         // size = depth+1 (includes leaf)
+            std::vector<uint8_t> choice_;     // chosen T at each depth
+            std::vector<uint8_t> next_t_;     // next T to try at each depth (>= choice+1)
+            SO6 current_{};                   // materialized current state
+        };
+
+        iterator begin() const { return iterator(leaves, max_depth, true); }
+        iterator end()   const { return iterator(); }
+    };
+
+    DFSExtensionRange dfs_extensions(int max_depth) const { return DFSExtensionRange{ &lookupTable.back(), max_depth }; }
+
     /**
      * @brief Brute-force depth-first extension matcher over the last layer (leaves).
      *
