@@ -9,6 +9,7 @@
 #include <tbb/concurrent_unordered_set.h>
 #include <ankerl/unordered_dense.h>
 #include <optional>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include "so6/SO6.hpp"
@@ -194,6 +195,50 @@ public:
     // Default iteration yields elements.
     ElementIterator begin() const { return ElementIterator(&lookupTable, 0); }
     ElementIterator end() const { return ElementIterator(&lookupTable, lookupTable.size()); }
+
+    /**
+     * @brief Brute-force depth-first extension matcher over the last layer (leaves).
+     *
+     * For each leaf S in the last finalized layer, enumerate all sequences of T
+     * moves of length 1..max_depth, where at each step the T index differs from
+     * the previous step's last_T (and for the first step, from S.last_T).
+     *
+     * Does not insert any generated states into the LUT. Instead, for each
+     * generated state, compares it to `target`. Returns the first matching
+     * sequence of T indices if found. If `from_leaf_out` is non-null, writes the
+     * starting leaf S that yielded the match.
+     */
+    std::optional<std::vector<uint8_t>> match_by_dfs_extension(const SO6& target,
+                                                               int max_depth,
+                                                               SO6* from_leaf_out = nullptr) const {
+        if (lookupTable.empty() || max_depth <= 0) return std::nullopt;
+
+        const auto& leaves = lookupTable.back();
+
+        // Local recursive lambda for DFS from a given node
+        std::function<bool(const SO6&, int, uint8_t, std::vector<uint8_t>&)> dfs;
+        dfs = [&](const SO6& cur, int remaining, uint8_t forbid_t, std::vector<uint8_t>& seq) -> bool {
+            // Try all T indices except the forbidden one
+            for (uint8_t t = 0; t < 15; ++t) {
+                if (t == forbid_t) continue;
+                SO6 next = T_OperatorRuntime(t) * cur; // copy; updates last_T inside next
+                seq.push_back(t);
+                if (next == target) return true;                     // match at this depth
+                if (remaining > 1 && dfs(next, remaining - 1, t, seq)) return true; // deeper
+                seq.pop_back();
+            }
+            return false;
+        };
+
+        for (const auto& leaf : leaves) {
+            std::vector<uint8_t> seq;
+            if (dfs(leaf, max_depth, leaf.last_T, seq)) {
+                if (from_leaf_out) *from_leaf_out = leaf;
+                return seq;
+            }
+        }
+        return std::nullopt;
+    }
 
     /**
      * @brief Recover the T-sequence from the root to a target element already stored in the LUT.
