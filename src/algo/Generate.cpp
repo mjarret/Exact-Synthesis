@@ -8,6 +8,7 @@
 #include "config/Globals.hpp"
 #include "so6/T_Operator.hpp"
 #include "sys/memory.hpp"
+#include "util/progress_tracker.hpp"
 
 namespace algo {
 
@@ -23,7 +24,7 @@ static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unorde
         if (T == last_T) continue;
         SO6 toInsert = T_OperatorRuntime(T) * S;
         // Deduplicate against all finalized layers, not just the immediate prior.
-        if (lut.find(toInsert) == lut.back().end()) {
+        if (lut.find(toInsert) == lut.end()) {
             auto ins = next.insert(toInsert);
             if (stop_pred && ins.second && stop_pred(toInsert)) {
                 should_stop.store(true, std::memory_order_relaxed);
@@ -37,35 +38,54 @@ static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unorde
 
 namespace algo {
 
+// Generic tbb::parallel_for_each wrapper with hidden progress bookkeeping.
+// - total_elems: number of elements in the range (for throttling)
+// - per_elem_work: nominal work credited per element (e.g., 15 attempted T's)
+// - found_supplier(): returns the current "found"/set size to display as the second bar number
+// - body(elem): performs work for a single element
+template <class Iter, class FoundSupplier, class Body>
+static inline void parallel_for_each_with_bar(Iter begin, Iter end,
+                                              std::size_t total_elems,
+                                              std::size_t per_elem_work,
+                                              indicators::ProgressTracker* bars,
+                                              FoundSupplier&& found_supplier,
+                                              Body&& body) {
+    std::atomic<size_t> global_counter{0};
+    std::atomic_flag progress_lock = ATOMIC_FLAG_INIT;
+    tbb::enumerable_thread_specific<size_t> local_counters;
+
+    const std::size_t interval_size = std::max<std::size_t>(total_elems / 100u, 1u);
+
+    tbb::parallel_for_each(begin, end, [&](const auto& elem) {
+        if (!interval_size) { body(elem); return; }
+        body(elem);
+        auto& local_counter = local_counters.local();
+        ++local_counter;
+        if (local_counter >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) {
+            if (bars) {
+                auto prog = global_counter.fetch_add(local_counter * per_elem_work, std::memory_order_relaxed);
+                bars->set_progress(prog, found_supplier());
+            }
+            local_counter = 0;
+            progress_lock.clear(std::memory_order_release);
+        }
+    });
+}
+
 tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::ProgressTracker* bars, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {
     auto& current = gen_set.current();
     tbb::concurrent_unordered_set<SO6> next;
 
-    std::atomic<size_t> global_counter{0};
-    std::atomic_flag progress_lock = ATOMIC_FLAG_INIT;
     std::atomic<bool> should_stop{false};
     std::atomic_flag winner_claimed = ATOMIC_FLAG_INIT;
     SO6 winner_value; // set exactly once when stop_pred first returns true
 
-    size_t interval_size = current.size()/100;
-    tbb::enumerable_thread_specific<size_t> local_counters;
-
-    tbb::parallel_for_each(current.begin(), current.end(), [&](const SO6& S) {
+    parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 15, bars,
+        [&]() { return next.size(); },
+        [&](const SO6& S) {
             if (should_stop.load(std::memory_order_relaxed)) return;
-            auto& local_counter = local_counters.local();
-
             add_new_neighbors_for(S, gen_set, next, stop_pred, should_stop, winner_claimed, winner_value);
-            ++local_counter; 
-
-            if (local_counter >= interval_size && !progress_lock.test_and_set(std::memory_order_acquire)) {
-                if (bars) {
-                    bars->set_progress(global_counter.fetch_add(local_counter*15, std::memory_order_relaxed), next.size());
-                }
-                local_counter = 0;
-                progress_lock.clear(std::memory_order_release);
-            }
-        }
-    );
+        });
 
     gen_set.push_back(std::move(next));
     if (stop_value_out && should_stop.load(std::memory_order_relaxed)) *stop_value_out = winner_value;
@@ -73,6 +93,8 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::Pr
 }
 
 LUT create_lookup_table (const SO6& root, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {
+    // Hide cursor to reduce flicker during progress updates; signal handler restores it.
+    indicators::show_console_cursor(false);
     LUT gen_set(root);
     for (int curr_T_count = 0; curr_T_count < stored_depth_max; ++curr_T_count) {
         std::atomic<bool> layer_hit{false};
@@ -119,6 +141,31 @@ std::optional<SO6> build_two_lookup_tables_until_match(LUT& first, LUT& second) 
 
     }
     return std::nullopt; // not found within configured depth
+}
+
+} // namespace algo
+
+namespace algo {
+
+void extend_lookup_table_bf(LUT& gen_set) {
+    // Hide cursor for this extension phase; signal handler restores on interrupt.
+    indicators::show_console_cursor(false);
+    const auto& current = gen_set.current();
+
+    std::unique_ptr<indicators::ProgressTracker> bars = std::make_unique<indicators::ProgressTracker>(gen_set.size()-1, gen_set.current().size() * 15, gen_set.current().size() * 15);
+
+    parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 15, bars.get(),
+        [&]() { return 0u; }, // no insertion in this raw extension; just show progress
+        [&](const SO6& S) {
+            const uint8_t last_T = S.last_T;
+            for (uint8_t T = 0; T < 15; ++T) {
+                if (T == last_T) continue;
+                SO6 child = T_OperatorRuntime(T, false) * S;
+                (void)child;
+            }
+        });
+
+    // No finalization here; this extension does not insert into LUT
 }
 
 } // namespace algo

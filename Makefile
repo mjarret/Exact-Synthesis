@@ -17,6 +17,12 @@ endif
 EXTRA_CXXFLAGS ?=
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
+# Numeric backend selection: NUMERIC=z2 (default) or NUMERIC=dyadic
+NUMERIC ?= z2
+ifeq ($(NUMERIC),dyadic)
+  CXXFLAGS += -DEXACT_USE_DYADIC_SQRT2=1
+endif
+
 # Enumerator selection: ENUM=cycle to enable OP6-style cycle caching
 ENUM ?= lut
 ifeq ($(ENUM),cycle)
@@ -88,6 +94,23 @@ DEBUG_LDFLAGS := -ltcmalloc
 # Binaries produced by this workspace
 BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester
 
+# Benchmarks / helper binaries
+BENCH_BINS := \
+  lehmer_bench \
+  row_ecs_bench \
+  ord6_enum_bench \
+  op6_enum_bench \
+  linear_transform_bench \
+  dyadic_bench \
+  lut_build_bench \
+  lut_sweep_bench \
+  cycle_build_bench \
+  mitm_bench \
+  mitm_depth_bench \
+  mitm_seed_gen \
+  col_compare_bench \
+  main_run_bench
+
 # Default Rule
 all: $(TARGET)
 
@@ -139,7 +162,12 @@ debug: clean $(TARGET)
 # Clean Rule
 
 clean:
-	rm -f $(ALL_OBJ) $(ALL_OBJ:.o=.d) $(BINARIES) *.out
+	# Object and dep files (anywhere)
+	find . -type f \( -name '*.o' -o -name '*.d' \) -delete || true
+	# Top-level binaries and outputs
+	rm -f $(BINARIES) $(BENCH_BINS) *.out || true
+	# Benchmark objects explicitly (for portability on systems without 'find -delete')
+	rm -f benchmarks/*.o apps/*.o src/*.o || true
 
 .PHONY: distclean
 distclean: clean
@@ -244,10 +272,21 @@ lut_build_bench:
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
+.PHONY: lut_sweep_bench
+lut_sweep_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
+		benchmarks/lut_sweep_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
 cycle_build_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS -DDS_ENUM_CYCLE=1 \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+.PHONY: dyadic_bench
+dyadic_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		benchmarks/dyadic_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
 # MITM meet-in-the-middle benchmark on random targets
 .PHONY: mitm_bench
@@ -269,3 +308,26 @@ mitm_seed_gen:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
 		benchmarks/mitm_seed_gen.cpp -o $@ $(LDFLAGS)
+
+# Column comparison microbenchmarks (current vs raw)
+.PHONY: col_compare_bench
+col_compare_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/col_compare_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+# Build two main variants (Z2 vs Dyadic) and a wrapper benchmark that runs them.
+.PHONY: main_z2 main_dyadic main_run_bench
+main_z2:
+	$(MAKE) clean
+	$(MAKE) NUMERIC=z2 $(TARGET)
+	cp $(TARGET) main_z2
+
+main_dyadic:
+	$(MAKE) clean
+	$(MAKE) NUMERIC=dyadic $(TARGET)
+	cp $(TARGET) main_dyadic
+
+main_run_bench: main_z2 main_dyadic
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		benchmarks/main_run_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)

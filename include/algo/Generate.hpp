@@ -31,6 +31,12 @@ LUT create_lookup_table (
     const std::function<bool(const SO6&)>& stop_pred = nullptr,
     SO6* stop_value_out = nullptr);
 
+// Extend the lookup table by exactly one BFS layer, expanding one leaf at a time.
+// Sequential expansion (no parallel_for_each) to make order explicit and progress visible.
+// Uses the same neighbor rule as get_next_T_count (skip last_T), deduplicates against all
+// finalized layers and within the next layer. Finalizes the new layer into the LUT.
+void extend_lookup_table_bf(LUT& gen_set);
+
 // Result of building two LUTs in lockstep until an intersection is found
 struct DualLUTMatch {
     bool found{false};

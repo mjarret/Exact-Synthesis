@@ -73,22 +73,42 @@ inline uint8_t bitmask_from_rows(const std::array<uint8_t, K>& rows) {
 // 1) Typed, zero-overhead driver for "rowwise kernels"
 // -----------------------------------------------------------------------------
 
-template<class K>
+// Row-kernel driver with optional canonicalization
+template<class K, bool Canonicalize = true>
 inline __attribute__((always_inline))
-SO6& apply_inplace_row_kernel(SO6& S, const K& k) {
-    for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col); 
-    S.canonical_form();
-    S.recompute_hash();
+SO6& apply_inplace_row_kernel_opt(SO6& S, const K& k) {
+    for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col);
+    if constexpr (Canonicalize) {
+        S.canonical_form();
+        S.recompute_hash();
+    } else {
+        // Keep hashes consistent with raw storage even without canonicalization
+        S.recompute_hash();
+    }
     return S;
 }
 
+// Backward-compatible default that canonicalizes
+template<class K>
+inline __attribute__((always_inline))
+SO6& apply_inplace_row_kernel(SO6& S, const K& k) {
+    return apply_inplace_row_kernel_opt<K, true>(S, k);
+}
+
 // Convenience: a typed "apply-copy"
+template<class K, bool Canonicalize = true>
+inline __attribute__((always_inline))
+SO6 apply_row_kernel_opt(const SO6& in, const K& k) {
+    SO6 copy = in;
+    apply_inplace_row_kernel_opt<K, Canonicalize>(copy, k);
+    return copy;
+}
+
+// Backward-compatible default that canonicalizes
 template<class K>
 inline __attribute__((always_inline))
 SO6 apply_row_kernel(const SO6& in, const K& k) {
-    SO6 copy = in;
-    apply_inplace_row_kernel(copy, k);
-    return copy;
+    return apply_row_kernel_opt<K, true>(in, k);
 }
 
 // -----------------------------------------------------------------------------
@@ -482,16 +502,16 @@ struct TKernelCT {
     }
 };
 
-template<int Row1, int Row2>
+template<int Row1, int Row2, bool Canonicalize = true>
 inline __attribute__((always_inline))
 SO6& apply_inplace_T(SO6& S) {
-    return apply_inplace_row_kernel(S, TKernelCT<Row1, Row2>{});
+    return apply_inplace_row_kernel_opt<TKernelCT<Row1, Row2>, Canonicalize>(S, TKernelCT<Row1, Row2>{});
 }
 
 template<int Row1, int Row2>
 inline __attribute__((always_inline))
 SO6 operator*(const TKernelCT<Row1, Row2>&, const SO6& rhs) {
-    return apply_row_kernel(rhs, TKernelCT<Row1, Row2>{});
+    return apply_row_kernel_opt<TKernelCT<Row1, Row2>, true>(rhs, TKernelCT<Row1, Row2>{});
 }
 
 // -----------------------------------------------------------------------------

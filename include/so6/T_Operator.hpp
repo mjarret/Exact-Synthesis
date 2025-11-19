@@ -34,7 +34,7 @@ public:
     static constexpr uint8_t index = compute_index();
 
     static inline __attribute__((always_inline)) SO6& apply_inplace(SO6& S) {
-        apply_inplace_T<Row1, Row2>(S);
+        apply_inplace_T<Row1, Row2, true>(S);
         S.last_T = index;
         return S;
     }
@@ -44,6 +44,20 @@ public:
         apply_inplace(copy);
         return copy;
     }
+
+    // Apply without canonical_form (hash is still recomputed to keep metadata consistent)
+    static inline __attribute__((always_inline)) SO6& apply_inplace_no_canonical(SO6& S) {
+        apply_inplace_T<Row1, Row2, false>(S);
+        S.last_T = index;
+        return S;
+    }
+
+    // Multiply without canonical_form; mirrors operator* but skips canonicalization
+    static inline __attribute__((always_inline)) SO6 multiply_no_metadata(const SO6& input) {
+        SO6 copy = input;
+        apply_inplace_no_canonical(copy);
+        return copy;
+    }
 };
 
 template<int Row1, int Row2>
@@ -51,40 +65,62 @@ inline SO6 operator*(const T_Operator<Row1, Row2>&, const SO6& rhs) {
     return T_Operator<Row1, Row2>::apply(rhs);
 }
 
+template<int Row1, int Row2>
+inline SO6& multiply_no_metadata(SO6& right) {
+    T_Operator<Row1, Row2>::apply_inplace(right);
+    return right;
+}
+
 /**
  * @brief Runtime wrapper for selecting a T operator by index.
  */
 class T_OperatorRuntime {
 public:
-    explicit constexpr T_OperatorRuntime(uint8_t idx) : index_(idx) {}
+    explicit constexpr T_OperatorRuntime(uint8_t idx, bool canonicalize = true)
+        : index_(idx), canonicalize_(canonicalize) {}
 
     uint8_t index() const { return index_; }
 
     inline SO6 apply(const SO6& S) const {
-        return TABLE[index_](S);
+        return (canonicalize_ ? TABLE_CAN[index_] : TABLE_NC[index_])(S);
     }
 
 private:
     using ApplyFn = SO6 (*)(const SO6&);
 
     template<int Row1, int Row2>
-    static inline SO6 apply_copy(const SO6& S) {
+    static inline SO6 apply_copy_can(const SO6& S) {
         return T_Operator<Row1, Row2>::apply(S);
     }
+    template<int Row1, int Row2>
+    static inline SO6 apply_copy_nc(const SO6& S) {
+        return T_Operator<Row1, Row2>::multiply_no_metadata(S);
+    }
 
-    static constexpr std::array<ApplyFn, 15> init_table() {
+    static constexpr std::array<ApplyFn, 15> init_table_can() {
         return std::array<ApplyFn, 15>{
-            apply_copy<0,1>,  apply_copy<0,2>,  apply_copy<0,3>,  apply_copy<0,4>,  apply_copy<0,5>,
-            apply_copy<1,2>,  apply_copy<1,3>,  apply_copy<1,4>,  apply_copy<1,5>,
-            apply_copy<2,3>,  apply_copy<2,4>,  apply_copy<2,5>,
-            apply_copy<3,4>,  apply_copy<3,5>,
-            apply_copy<4,5>
+            apply_copy_can<0,1>,  apply_copy_can<0,2>,  apply_copy_can<0,3>,  apply_copy_can<0,4>,  apply_copy_can<0,5>,
+            apply_copy_can<1,2>,  apply_copy_can<1,3>,  apply_copy_can<1,4>,  apply_copy_can<1,5>,
+            apply_copy_can<2,3>,  apply_copy_can<2,4>,  apply_copy_can<2,5>,
+            apply_copy_can<3,4>,  apply_copy_can<3,5>,
+            apply_copy_can<4,5>
+        };
+    }
+    static constexpr std::array<ApplyFn, 15> init_table_nc() {
+        return std::array<ApplyFn, 15>{
+            apply_copy_nc<0,1>,  apply_copy_nc<0,2>,  apply_copy_nc<0,3>,  apply_copy_nc<0,4>,  apply_copy_nc<0,5>,
+            apply_copy_nc<1,2>,  apply_copy_nc<1,3>,  apply_copy_nc<1,4>,  apply_copy_nc<1,5>,
+            apply_copy_nc<2,3>,  apply_copy_nc<2,4>,  apply_copy_nc<2,5>,
+            apply_copy_nc<3,4>,  apply_copy_nc<3,5>,
+            apply_copy_nc<4,5>
         };
     }
 
-    static inline const std::array<ApplyFn, 15> TABLE = init_table();
+    static inline const std::array<ApplyFn, 15> TABLE_CAN = init_table_can();
+    static inline const std::array<ApplyFn, 15> TABLE_NC  = init_table_nc();
 
     uint8_t index_;
+    bool canonicalize_;
 };
 
 inline SO6 operator*(const T_OperatorRuntime& op, const SO6& rhs) {

@@ -118,22 +118,18 @@ void SO6::recompute_hash() {
 SO6 SO6::operator*(const SO6 &other) const
 {
     SO6 prod;
-
-    for (int row = 0; row < 6; ++row)
+    for (int row = 0; row < 6; ++row) for (int col = 0; col < 6; ++col)
     {
+        Z2  cur = 0;
         for (int k = 0; k < 6; ++k)
         {
-            const Z2 left_element = get_element(row, k);
-            if (left_element.int_c == 0) continue;
-            for (int col = 0; col < 6; ++col)
-            {
+                const Z2 left_element = get_element(row, k);
+                if (left_element.int_c == 0) continue;
                 Z2 right_element = other.get_element(k, col);
                 if (right_element.int_c == 0) continue;
-                Z2 cur = prod.get_element(row, col);
                 cur += (left_element * right_element);
-                prod.set_element(row, col, cur);
-            }
         }
+        prod.set_element(row, col, cur);
     }
     return prod;
 }

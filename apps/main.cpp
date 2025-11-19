@@ -7,10 +7,12 @@
  */
 
 #include <tbb/global_control.h>
+#include <tbb/parallel_for_each.h>
 #include <iomanip>
 #include <fstream>
 #include <cstdlib>
 #include <csignal>
+#include <chrono>
 #include "config/Globals.hpp"
 #include "so6/SO6.hpp"
 #include "ds/LUT.hpp" // Rooted SO6 BFS/LUT
@@ -125,44 +127,7 @@ int main(int argc, char **argv)
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
     LUT gen_set = algo::create_lookup_table(SO6::identity(), nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
-
-    // ---- Test-drive DFS extension iterator over the last layer ----
-    // Continue "generating" (without insertion) by enumerating all T-chains
-    // of length 1..dfs_depth from each leaf, in parallel, with progress bars.
-    {
-        // Heuristic depth: if target_T_count > stored_depth_max, extend by the remainder; else 1.
-        const int dfs_depth = std::max<int>(1, static_cast<int>(target_T_count) - static_cast<int>(stored_depth_max));
-        const std::size_t leaf_count = gen_set.current().size();
-
-        // Predict total extensions = leaves * sum_{k=1..d} 14^k  (no immediate repeats)
-        auto sum14 = [&](int d)->std::size_t {
-            std::size_t acc = 0, pow = 14;
-            for (int k = 1; k <= d; ++k) { acc += pow; if (k+1 <= d) pow *= 14; }
-            return acc;
-        };
-        const std::size_t predicted_total = leaf_count * sum14(dfs_depth);
-
-        // Progress tracker labeled DFS; use predicted_total as both work and matrix counters
-        std::unique_ptr<indicators::ProgressTracker> dfs_bar =
-            std::make_unique<indicators::ProgressTracker>(static_cast<int>(stored_depth_max), predicted_total, predicted_total, "DFS");
-
-        std::atomic<std::size_t> processed{0};
-        const std::size_t update_every = std::max<std::size_t>(predicted_total / 200, 1024);
-
-        auto range = gen_set.bfs_extensions(dfs_depth);
-
-        tbb::parallel_for_each(range.begin(), range.end(), [&](const SO6& /*state*/){
-            // No-op body for now; just count states to exercise the iterator in parallel
-            std::size_t n = processed.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (!suppress_indicators && (n % update_every == 0)) {
-                dfs_bar->set_progress(std::min(n, predicted_total), n);
-            }
-        });
-
-        // Final update + completion snapshot
-        dfs_bar->set_progress(std::min<std::size_t>(processed, predicted_total), processed);
-        dfs_bar->complete(processed);
-    }
+    algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
 
     indicators::show_console_cursor(true);
 

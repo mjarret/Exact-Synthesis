@@ -28,6 +28,13 @@
 
 // Need about twice as many bits as t counts to store largest possible
 
+#ifdef EXACT_USE_DYADIC_SQRT2
+
+#include "DyadicSqrt2.hpp"
+using Z2 = DyadicSqrt2;
+
+#else
+
 /// @brief A struct representing a number in the form of (int_c + sqrt(2) * sqrt2_c) * 2^denom_exp
 struct Z2 {
     union {
@@ -324,5 +331,7 @@ namespace std {
         }
     };
 }
+
+#endif // !EXACT_USE_DYADIC_SQRT2
 
 #endif // Z2_HPP

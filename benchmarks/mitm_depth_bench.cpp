@@ -14,6 +14,8 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <array>
+#include <algorithm>
 
 #include <tbb/concurrent_unordered_set.h>
 
@@ -21,10 +23,11 @@
 #include "ds/MITM.hpp"
 #include "so6/SO6.hpp"
 #include "so6/T_Operator.hpp"
+#include "algo/Generate.hpp"
 
 namespace {
 
-constexpr int kMaxTargetLen = 18;
+constexpr int kMaxTargetLen = 10;
 constexpr int kMaxPerLength = 10; // targets to keep per discovered length bucket
 constexpr int kMaxAttempts = 400; // cap warmup attempts to prevent hangs
 
@@ -106,6 +109,57 @@ std::vector<Bucket> build_buckets() {
     return out;
 }
 
+// Prebuild a single LUT up to depth kMaxTargetLen/2 from identity, reused across runs.
+const LUT& global_halfdepth_lut() {
+    static bool built = false;
+    static LUT lut;
+    if (!built) {
+        suppress_indicators = true;
+        uint8_t prev_depth = stored_depth_max;
+        stored_depth_max = static_cast<uint8_t>(kMaxTargetLen / 2); // depth 10 for kMaxTargetLen=20
+        lut = algo::create_lookup_table(SO6::identity(), nullptr, nullptr);
+        stored_depth_max = prev_depth;
+        built = true;
+    }
+    return lut;
+}
+
+// Alternate MITM-style check: given a prebuilt LUT L and target root,
+// explicitly enumerate all signed row permutations P and test m * (P * root)
+// for membership in L. This treats all matrices equivalent to `root` under
+// signed row permutations as candidate roots.
+bool mitm_mulroot_matches(const LUT& lut, const SO6& root) {
+    // Precompute all signed row permutations of `root`:
+    //   P * root, where P permutes rows and optionally flips their sign.
+
+    std::array<uint8_t, 6> perm{{0, 1, 2, 3, 4, 5}};
+    do {
+        for (uint8_t sign_mask = 0; sign_mask < 64; ++sign_mask) {
+            SO6 variant;
+            for (uint8_t r = 0; r < 6; ++r) {
+                const uint8_t src_row = perm[r];
+                const bool neg = (sign_mask >> r) & 1u;
+                for (uint8_t c = 0; c < 6; ++c) {
+                    auto v = root.get_element(src_row, c);
+                    if (neg) v = -v;
+                    variant.set_element(r, c, v);
+                }
+            }
+            for (const auto& m : lut.elements()) {
+                SO6 prod = m * variant;      // raw matrix multiply
+                prod.recompute_hash();
+                prod.canonical_form();
+                if (lut.find(prod) != lut.end()) return true;
+            }
+        }
+    } while (std::next_permutation(perm.begin(), perm.end()));
+
+    // For each LUT element m and each permuted root P*root, compute m * (P*root),
+    // normalize metadata (hash + canonical form), then check for membership.
+
+    return false;
+}
+
 void register_benchmarks(const std::vector<Bucket>& buckets) {
     for (const auto& bucket : buckets) {
         const std::string name = "mitm/depth_" + std::to_string(bucket.length);
@@ -137,6 +191,37 @@ void register_benchmarks(const std::vector<Bucket>& buckets) {
             state.counters["bucket_size"] = static_cast<double>(bucket.targets.size());
             state.counters["expected_depth"] = static_cast<double>(bucket.length);
             state.counters["avg_depth_measured"] = successes ? static_cast<double>(depth_sum) / succ : 0.0;
+        })->Unit(benchmark::kMillisecond);
+
+        const std::string alt_name = "mitm_mulroot/depth_" + std::to_string(bucket.length);
+        benchmark::RegisterBenchmark(alt_name, [bucket](benchmark::State& state) {
+            suppress_indicators = true;
+
+            const LUT& lut = global_halfdepth_lut(); // depth 10 for kMaxTargetLen=20
+
+            std::size_t idx = 0;
+            std::uint64_t successes = 0;
+            std::uint64_t failures = 0;
+
+            for (auto _ : state) {
+                const SO6& target = bucket.targets[idx];
+                idx = (idx + 1) % bucket.targets.size();
+
+                bool hit = mitm_mulroot_matches(lut, target);
+                if (hit) ++successes;
+                else     ++failures;
+
+                benchmark::DoNotOptimize(hit);
+            }
+
+            const double runs = static_cast<double>(successes + failures);
+            const double succ = successes ? static_cast<double>(successes) : 1.0;
+            state.counters["runs"] = runs;
+            state.counters["successes"] = static_cast<double>(successes);
+            state.counters["failures"] = static_cast<double>(failures);
+            state.counters["success_rate"] = successes / (runs > 0.0 ? runs : 1.0);
+            state.counters["bucket_len"] = static_cast<double>(bucket.length);
+            state.counters["bucket_size"] = static_cast<double>(bucket.targets.size());
         })->Unit(benchmark::kMillisecond);
     }
 }
