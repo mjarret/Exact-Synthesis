@@ -7,7 +7,7 @@ LDFLAGS := -ltbb -lbenchmark -lpthread
 INCLUDE := -I../include -I../include/indicators -I. -I../include/indicators/details -I../include/boost -I../include/tbb
 
 # Targets
-TARGETS := verify_z2.out verify_dyadic.out canon_regression.out
+TARGETS := verify_z2.out verify_dyadic.out verify_dyadic_vs_z2.out canon_regression.out
 
 CANON_OBJS := \
 	canon_regression.o \
@@ -40,6 +40,9 @@ verify_z2.out: verify_z2.o   # Now correctly links with Z2_old.o
 
 # Dyadic mirror of the Z2 verification (reduced ranges)
 verify_dyadic.out: verify_dyadic.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
+
+verify_dyadic_vs_z2.out: verify_dyadic_vs_z2.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
 
 canon_regression.out: $(CANON_OBJS)
