@@ -109,7 +109,8 @@ BENCH_BINS := \
   mitm_depth_bench \
   mitm_seed_gen \
   col_compare_bench \
-  main_run_bench
+  main_run_bench \
+  dyadic_int_bench
 
 # Default Rule
 all: $(TARGET)
@@ -315,6 +316,12 @@ col_compare_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
 		benchmarks/col_compare_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+# Dyadic vs Int32 microbenchmarks
+.PHONY: dyadic_int_bench
+dyadic_int_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		benchmarks/dyadic_int_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
 # Build two main variants (Z2 vs Dyadic) and a wrapper benchmark that runs them.
 .PHONY: main_z2 main_dyadic main_run_bench
