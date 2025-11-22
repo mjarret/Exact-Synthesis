@@ -35,8 +35,8 @@ namespace indicators {
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
-#include <indicators/dynamic_progress.hpp>
-#include <indicators/progress_bar.hpp>
+#include <third_party/indicators/dynamic_progress.hpp>
+#include <third_party/indicators/progress_bar.hpp>
 #include "sys/memory.hpp"
 #include "config/Globals.hpp"
 

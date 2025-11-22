@@ -10,10 +10,10 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <indicators/color.hpp>
-#include <indicators/setting.hpp>
-#include <indicators/terminal_size.hpp>
-#include <indicators/details/stream_helper.hpp>
+#include <third_party/indicators/color.hpp>
+#include <third_party/indicators/setting.hpp>
+#include <third_party/indicators/terminal_size.hpp>
+#include <third_party/indicators/details/stream_helper.hpp>
 #include <iomanip>
 #include <iostream>
 #include <sstream>

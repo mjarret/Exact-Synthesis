@@ -11,6 +11,9 @@
 #ifndef MITM_HPP
 #define MITM_HPP
 
+#include <array>
+#include <vector>
+
 #include "ds/LUT.hpp"
 #include "util/progress_tracker.hpp"
 
@@ -40,9 +43,30 @@ private:
     LUT right_;
 };
 
+// Summary of a MITM match, including paths and a mapping between the two
+// canonical representatives at the meeting point.
+struct MITMMatchResult {
+    bool found{false};
+    SO6 meet{};                            // intersecting element (canonical)
+
+    int dl{-1};                            // depth from left root to meet
+    int dr{-1};                            // depth from right root to meet
+    std::vector<uint8_t> left_path;        // T-sequence from left root to meet
+    std::vector<uint8_t> right_path;       // T-sequence from right root to meet
+
+    std::array<uint8_t,6> row_map{};       // row mapping from left to right
+    std::array<uint8_t,6> col_map{};       // col mapping from left to right
+    uint8_t sign_mask{0};                  // per-row sign flips to apply to left
+    bool mapping_ok{false};                // true if reconcile_matrices succeeded
+};
+
 // Alternate expansions of the two sides until intersection or depth limit.
 // Returns the meeting element if found; std::nullopt otherwise.
 std::optional<SO6> generate_mitm_until_match(MITM& mitm);
+
+// Run a MITM search and, if a meet is found, recover paths on both sides and
+// a row/col/sign mapping between the two canonical representatives at the meet.
+MITMMatchResult generate_mitm_match(MITM& mitm);
 
 // Attempt to compute row/col/sign mapping that transforms lhs to rhs exactly.
 bool reconcile_matrices(const SO6& lhs, const SO6& rhs,

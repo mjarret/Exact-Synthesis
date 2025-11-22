@@ -10,96 +10,110 @@
 #define DYADIC_SQRT2_HPP
 
 #include <cstdint>
+#include <climits>
 #include <compare>
 #include <iostream>
 #include <bit>
 
+using word_t = uint32_t;
+using limb_t = uint16_t;
+using int_t  = int8_t;
+
 struct DyadicSqrt2 {
     // Layout constants (mirroring Z2.hpp)
-    static constexpr uint8_t kBitsForNumerator = 16;
-    static constexpr uint8_t kBitsForIntC      = 8;
-    static constexpr uint8_t kBitsForSqrt2C    = 8;
+    static constexpr uint8_t kBitsForNumerator = sizeof(limb_t) * CHAR_BIT;
+    static constexpr uint8_t kBitsForIntC      = kBitsForNumerator/2;
+    static constexpr uint8_t kBitsForSqrt2C    = kBitsForNumerator/2;
     static constexpr uint8_t kBitsForDenomExp  = 8;
 
-    static constexpr uint16_t kAxis           = uint16_t(1u << kBitsForIntC);
-    static constexpr uint16_t kIntMask        = uint16_t(kAxis - 1u);
-    static constexpr uint16_t kNumeratorMask  = uint16_t((uint32_t(1u) << kBitsForNumerator) - 1u);
-    static constexpr uint16_t kSqrt2Mask      = uint16_t(kNumeratorMask & ~kIntMask);
+    static constexpr limb_t kAxis           = limb_t(1ull << kBitsForIntC);
+    static constexpr limb_t kIntMask        = limb_t(kAxis - 1ull);
+    static constexpr limb_t kNumeratorMask  = limb_t((word_t(1ull) << kBitsForNumerator) - 1u);
+    static constexpr limb_t kSqrt2Mask      = limb_t(kNumeratorMask & ~kIntMask);
 
     union {
         struct {
             union {
-                uint16_t numerator_bits : kBitsForNumerator; // packed int_c + sqrt2_c
+                limb_t numerator_bits : kBitsForNumerator; // packed int_c + sqrt2_c
                 struct {
-                    int8_t int_c   : kBitsForIntC;
-                    int8_t sqrt2_c : kBitsForSqrt2C;
+                    int_t int_c   : kBitsForIntC;
+                    int_t sqrt2_c : kBitsForSqrt2C;
                 };
             };
             uint8_t denom_exp : kBitsForDenomExp;
         };
-        uint32_t data : 24; // 16-bit numerator + 8-bit exponent
+        word_t data : kBitsForNumerator + kBitsForDenomExp; // 16-bit numerator + 8-bit exponent
     };
 
     // ---------- Construction ----------
 
-    constexpr DyadicSqrt2(uint32_t data_ = 0) : data(data_) {}
+    constexpr DyadicSqrt2(word_t data_ = 0) : data(data_) {}
 
-    constexpr DyadicSqrt2(uint16_t numerator, uint8_t denom)
+    constexpr DyadicSqrt2(limb_t numerator, uint8_t denom)
         : numerator_bits(numerator), denom_exp(denom) {}
 
-    constexpr DyadicSqrt2(uint8_t int_coeff, uint8_t sqrt2_coeff, uint8_t denom)
+    constexpr DyadicSqrt2(int_t int_coeff, int_t sqrt2_coeff, uint8_t denom)
         : int_c(int_coeff), sqrt2_c(sqrt2_coeff), denom_exp(denom) {}
 
 private:
     // ---------- Helper bit ops (function replacements for Z2 macros) ----------
 
-    static inline uint16_t byte_swap(uint16_t v) {
-        return __builtin_bswap16(v);
+    static inline limb_t swap_numerator(limb_t v) {
+        return std::rotr(v, kBitsForIntC);
     }
 
-    static inline uint16_t u_middle_mask(uint8_t s) {
-        uint32_t tmp = (uint32_t(kAxis) << s);
+    static inline limb_t u_middle_mask(uint8_t s) {
+        word_t tmp = (word_t(kAxis) << s);
         tmp = ~(tmp - kAxis);
-        return static_cast<uint16_t>(tmp);
+        return static_cast<limb_t>(tmp);
     }
 
-    static inline uint16_t lower_sign_extend(uint16_t x, uint8_t s) {
-        uint16_t low_sign = static_cast<uint16_t>(x & 128u);
-        uint16_t part1 = static_cast<uint16_t>((low_sign << (s + 1)) - low_sign);
-        return static_cast<uint16_t>(part1 | (x & u_middle_mask(s)));
+    static inline limb_t lower_sign_extend(limb_t x, uint8_t s) {
+        // Sign bit for the low coefficient lives in the top bit of the
+        // int_c field, whose width is kBitsForIntC.
+        const limb_t sign_bit = static_cast<limb_t>(limb_t(1u) << (kBitsForIntC - 1u));
+        limb_t low_sign = static_cast<limb_t>(x & sign_bit);
+        limb_t part1 = static_cast<limb_t>((low_sign << (s + 1u)) - low_sign);
+        return static_cast<limb_t>(part1 | (x & u_middle_mask(s)));
     }
 
-    static inline uint16_t left_shift_and_swap(uint16_t n) {
-        return byte_swap(static_cast<uint16_t>(n + (n & kSqrt2Mask)));
+    static inline limb_t left_shift_and_swap(limb_t n) {
+        return swap_numerator(static_cast<limb_t>(n + (n & kSqrt2Mask)));
     }
 
-    static inline uint16_t numerator_left_shift(uint16_t n, uint8_t s) {
+    static inline limb_t numerator_left_shift(limb_t n, uint8_t s) {
         uint8_t half = static_cast<uint8_t>(s / 2u);
-        return static_cast<uint16_t>((n << half) & u_middle_mask(half));
+        return static_cast<limb_t>((n << half) & u_middle_mask(half));
     }
 
-    static inline uint16_t add_numerators(uint16_t left, uint16_t right) {
-        uint16_t sum   = static_cast<uint16_t>((left + right) & kNumeratorMask);
-        uint16_t carry = static_cast<uint16_t>(((left & kIntMask) + (right & kIntMask)) >> 8);
-        return static_cast<uint16_t>(sum - static_cast<uint16_t>(carry << 8));
+    static inline limb_t add_numerators(limb_t left, limb_t right) {
+        limb_t sum   = static_cast<limb_t>((left + right) & kNumeratorMask);
+        // Carry is the overflow from the int_c half; shift by the number
+        // of bits in that half rather than a hard-coded 8.
+        limb_t carry = static_cast<limb_t>(((left & kIntMask) + (right & kIntMask)) >> kBitsForIntC);
+        return static_cast<limb_t>(sum - static_cast<limb_t>(carry << kBitsForIntC));
     }
 
 public:
     // ---------- Shift operators ----------
 
+    inline __attribute__((always_inline))
     DyadicSqrt2& operator>>=(uint8_t shift) {
-        numerator_bits = static_cast<uint16_t>(
+        numerator_bits = static_cast<limb_t>(
             static_cast<int16_t>(lower_sign_extend(numerator_bits, shift)) >> shift);
         denom_exp = static_cast<uint8_t>((denom_exp - 2u * shift) * (numerator_bits != 0));
         return *this;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2& operator<<=(uint8_t shift) {
-        numerator_bits = (numerator_bits << shift) & u_middle_mask(shift);
-        denom_exp = (denom_exp + 2u * shift) * (numerator_bits != 0);
+        limb_t mask = static_cast<limb_t>(~((kAxis << shift) - kAxis));
+        numerator_bits = static_cast<limb_t>((numerator_bits << shift) & mask);
+        denom_exp = static_cast<uint8_t>((denom_exp + 2u * shift) * (numerator_bits != 0));
         return *this;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator<<(uint8_t shift) const {
         DyadicSqrt2 ret = *this;
         ret <<= shift;
@@ -108,234 +122,41 @@ public:
 
     // ---------- Arithmetic ----------
 
-    // Addition-assignment: mirrors Z2::operator+= switch on exponent difference
+    // Addition-assignment: generic, parity-driven implementation
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator+=(DyadicSqrt2 other) {
-        const int8_t exp_diff = static_cast<int8_t>(denom_exp) - static_cast<int8_t>(other.denom_exp);
-        switch (exp_diff) {
-            // other shallower or equal (P cases, exp_diff >= 0)
-            case 0: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 0));
-                // N == 0 path includes reduce()
-                reduce();
-                break;
-            }
-            case 1: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 1));
-                break;
-            }
-            case 2: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 2));
-                break;
-            }
-            case 3: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 3));
-                break;
-            }
-            case 4: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 4));
-                break;
-            }
-            case 5: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 5));
-                break;
-            }
-            case 6: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 6));
-                break;
-            }
-            case 7: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 7));
-                break;
-            }
-            case 8: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 8));
-                break;
-            }
-            case 9: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 9));
-                break;
-            }
-            case 10: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 10));
-                break;
-            }
-            case 11: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 11));
-                break;
-            }
-            case 12: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 12));
-                break;
-            }
-            case 13: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 13));
-                break;
-            }
-            case 14: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(other.numerator_bits, 14));
-                break;
-            }
-            case 15: {
-                numerator_bits = add_numerators(
-                    numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(other.numerator_bits), 15));
-                break;
-            }
-
-            // other deeper (N cases, exp_diff < 0)
-            case -1: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 1));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -2: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 2));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -3: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 3));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -4: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 4));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -5: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 5));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -6: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 6));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -7: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 7));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -8: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 8));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -9: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 9));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -10: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 10));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -11: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 11));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -12: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 12));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -13: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 13));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -14: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(numerator_bits, 14));
-                denom_exp = other.denom_exp;
-                break;
-            }
-            case -15: {
-                numerator_bits = add_numerators(
-                    other.numerator_bits,
-                    numerator_left_shift(left_shift_and_swap(numerator_bits), 15));
-                denom_exp = other.denom_exp;
-                break;
-            }
-
-            default: {
-                numerator_bits = 0;
-                denom_exp = 0;
-                break;
-            }
+        const auto diff = denom_exp - other.denom_exp;
+        const auto N = diff >= 0 ? diff : -diff;
+        if (N >= kBitsForNumerator) {
+            numerator_bits = 0;
+            denom_exp = 0;
+            return *this;
+        }
+        if (diff >= 0) {
+            limb_t r = other.numerator_bits;
+            if (N & 1u) r = left_shift_and_swap(r);
+            r = numerator_left_shift(r, static_cast<uint8_t>(N));
+            numerator_bits = add_numerators(numerator_bits, r);
+            if (N == 0) reduce();
+        } else {
+            limb_t l = numerator_bits;
+            if (N & 1u) l = left_shift_and_swap(l);
+            l = numerator_left_shift(l, static_cast<uint8_t>(N));
+            numerator_bits = add_numerators(other.numerator_bits, l);
+            denom_exp = other.denom_exp;
         }
         return *this;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator-=(const DyadicSqrt2& other) {
         if (other.numerator_bits == 0) {
-            // Mirror Z2 quirk: construct from numerator_bits only
-            return DyadicSqrt2(static_cast<uint32_t>(numerator_bits));
+            return *this;
         }
         return *this += (-other);
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2& operator*=(const DyadicSqrt2& other) {
         numerator_bits = numerator_bits & kIntMask;
         int_c   = int_c * other.int_c + ((sqrt2_c * other.sqrt2_c) << 1);
@@ -344,31 +165,36 @@ public:
         return *this;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator+(DyadicSqrt2 other) const {
         DyadicSqrt2 ret = *this;
         ret += other;
         return ret;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator-(const DyadicSqrt2& other) const {
         DyadicSqrt2 ret = *this;
         return ret -= other;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator*(const DyadicSqrt2& other) const {
         DyadicSqrt2 ret = *this;
         return ret *= other;
     }
 
+    inline __attribute__((always_inline))
     DyadicSqrt2 operator-() const {
         return DyadicSqrt2(
-            static_cast<uint16_t>((kAxis - numerator_bits) * (numerator_bits != 0)),
+            static_cast<limb_t>((kAxis - numerator_bits) * (numerator_bits != 0)),
             denom_exp);
     }
 
     // ---------- Comparison ----------
 
 #if __cpp_impl_three_way_comparison
+    inline __attribute__((always_inline))
     std::strong_ordering operator<=>(const DyadicSqrt2& other) const {
         return data * ((numerator_bits & kIntMask) != 0)
             <=> other.data * ((other.numerator_bits & kIntMask) != 0);
@@ -391,6 +217,7 @@ public:
     }
 #endif
 
+    inline __attribute__((always_inline))
     bool operator==(const DyadicSqrt2& other) const {
         return data * ((numerator_bits & kIntMask) != 0)
             == other.data * ((other.numerator_bits & kIntMask) != 0);
@@ -409,13 +236,19 @@ public:
 
     // ---------- Utilities ----------
 
+    inline __attribute__((always_inline))
     void reduce() {
-        const uint8_t int_zeros = std::countr_zero(static_cast<uint8_t>(int_c & 0xFF));
-        const uint8_t sq_zeros  = std::countr_zero(static_cast<uint8_t>(sqrt2_c & 0xFF));
+        // Count leading zeros within each coefficient's logical width
+        // (kBitsForIntC) instead of assuming 8 bits.
+        const uint8_t coeff_mask = static_cast<uint8_t>((1u << kBitsForIntC) - 1u);
+        const uint8_t int_zeros =
+            std::countr_zero(static_cast<uint8_t>(static_cast<uint8_t>(int_c) & coeff_mask));
+        const uint8_t sq_zeros  =
+            std::countr_zero(static_cast<uint8_t>(static_cast<uint8_t>(sqrt2_c) & coeff_mask));
 
         if (int_zeros > sq_zeros) {
             int_c >>= 1;
-            numerator_bits = byte_swap(static_cast<uint16_t>(
+            numerator_bits = swap_numerator(static_cast<limb_t>(
                 static_cast<int16_t>(lower_sign_extend(numerator_bits, sq_zeros)) >> sq_zeros));
             denom_exp = denom_exp - (2u * sq_zeros + 1u);
             return;
@@ -427,7 +260,7 @@ public:
 namespace std {
     inline DyadicSqrt2 abs(const DyadicSqrt2& z) {
         int num = (z.int_c < 0) ? DyadicSqrt2::kAxis - z.numerator_bits : z.numerator_bits;
-        return DyadicSqrt2(static_cast<uint16_t>(num), z.denom_exp);
+        return DyadicSqrt2(static_cast<limb_t>(num), z.denom_exp);
     }
 
     template <>

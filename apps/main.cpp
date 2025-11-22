@@ -110,9 +110,9 @@ int main(int argc, char **argv)
               << (double(available_memory)/ (1024.0*1024.0*1024.0)) << " GiB\n";
     // Problem size / storage
     std::cout << "  " << std::left << std::setw(22) << "sizeof(SO6)" << ": " << SO6::size_bytes() << " bytes\n";
-    std::cout << "  Z2 layout: numerator=" << bits_for_numerator
-              << " (int=" << bits_for_int_c << ", sqrt2=" << bits_for_sqrt2_c << ")"
-              << ", denom_exp=" << bits_for_denom_exp << "\n";
+    std::cout << "  DyadicSqrt2 layout: numerator=" << sizeof(DyadicSqrt2().kBitsForNumerator)
+              << " (int=" << sizeof(DyadicSqrt2().kBitsForIntC) << ", sqrt2=" << sizeof(DyadicSqrt2().kBitsForSqrt2C) << ")"
+              << ", denom_exp=" << sizeof(DyadicSqrt2().kBitsForDenomExp) << "\n";
     // GPU/OpenCL info omitted in CPU-only build
     // Inputs/flags
     print_bool("suppress_indicators", suppress_indicators);

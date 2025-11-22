@@ -9,7 +9,6 @@
 
 #include <array>
 #include <cstdint>
-#include "util/assume.hpp"
 
 struct Count6 {
     // Encoded rank in [0, states-1]
@@ -22,11 +21,6 @@ struct Count6 {
     // Binomial for small ranges (preconditions held by caller): n<=11, 0<=k<=min(n,6)
     // No runtime checks; encode assumptions for the compiler.
     static inline uint16_t binom(int n, int k) {
-        ASSUME(n >= 0);
-        ASSUME(k >= 0);
-        ASSUME(k <= n);
-        ASSUME(n <= 11);
-        ASSUME(k <= 6);
         int kk = k;
         if (kk > n - kk) kk = n - kk; // use symmetry; kk in [0, floor(n/2)]
         uint32_t r = 1;
@@ -38,8 +32,6 @@ struct Count6 {
 
     // Number of weak compositions of n into r parts: C(n+r-1, r-1)
     static inline uint16_t compositions(int n, int r) {
-        ASSUME(n >= 0);
-        ASSUME(r >= 1);
         return binom(n + r - 1, r - 1);
     }
 
@@ -47,7 +39,6 @@ struct Count6 {
     static inline Count6 from_counts(const std::array<uint8_t, 6>& c) {
         int sum = 0;
         for (int i = 0; i < 6; ++i) sum += c[static_cast<size_t>(i)];
-        ASSUME(sum <= total);
         Count6 out{};
         uint16_t rank = 0;
         // Model sum≤total by adding a final implicit slack part so that

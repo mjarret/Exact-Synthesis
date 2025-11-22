@@ -16,7 +16,7 @@ namespace {
 
 using MoveSeq = std::vector<uint8_t>;
 
-std::string format_z2(const Z2& z) {
+std::string format_DyadicSqrt2(const DyadicSqrt2& z) {
     std::ostringstream oss;
     oss << '(' << static_cast<int>(z.int_c)
         << ',' << static_cast<int>(z.sqrt2_c)
@@ -25,14 +25,14 @@ std::string format_z2(const Z2& z) {
 }
 
 void dump_state(const std::string& label, const SO6& s) {
-    auto rows = s.row_perm_lh_.to_array();
-    auto cols = s.col_perm_lh_.to_array();
+    auto rows = s.row_perm_lh().to_array();
+    auto cols = s.col_perm_lh().to_array();
 
     std::cout << label << "\n";
-    std::cout << "  sign mask : 0x" << std::hex << static_cast<int>(s.sign_convention)
+    std::cout << "  sign mask : 0x" << std::hex << static_cast<int>(s.sign_mask())
               << std::dec << "\n";
-    std::cout << "  hash      : " << s.hash << "\n";
-    std::cout << "  col_hash  : " << s.col_hash << "\n";
+    std::cout << "  hash      : " << s.primary_hash() << "\n";
+    std::cout << "  col_hash  : " << s.column_hash() << "\n";
     std::cout << "  row_perm  :";
     for (auto v : rows) std::cout << ' ' << static_cast<int>(v);
     std::cout << "\n  col_perm  :";
@@ -42,7 +42,7 @@ void dump_state(const std::string& label, const SO6& s) {
         std::cout << "    ";
         for (int c = 0; c < 6; ++c) {
             std::cout << std::setw(12)
-                      << format_z2(s.get_element(rows[static_cast<size_t>(r)],
+                      << format_DyadicSqrt2(s.get_element(rows[static_cast<size_t>(r)],
                                                  cols[static_cast<size_t>(c)]));
         }
         std::cout << '\n';
@@ -77,17 +77,17 @@ SO6 left_multiply_by_T_variant(SO6 S, uint8_t idx) {
         S.hash = static_cast<uint16_t>(S.hash - col_sig);
         S.col_hash = static_cast<uint16_t>(S.col_hash - col_sig);
 
-        Z2 a = S.get_element(row1, static_cast<uint8_t>(col));
-        Z2 b = S.get_element(row2, static_cast<uint8_t>(col));
-        const Z2 a_old = a;
-        const Z2 b_old = b;
+        DyadicSqrt2 a = S.get_element(row1, static_cast<uint8_t>(col));
+        DyadicSqrt2 b = S.get_element(row2, static_cast<uint8_t>(col));
+        const DyadicSqrt2 a_old = a;
+        const DyadicSqrt2 b_old = b;
 
         a += b_old;
         if constexpr (Mode == UpdateVariant::SubtractThenNeg) {
             b -= a_old;
             b = -b;
         } else {
-            Z2 tmp = a_old;
+            DyadicSqrt2 tmp = a_old;
             tmp -= b_old;
             b = tmp;
         }

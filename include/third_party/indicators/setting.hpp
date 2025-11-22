@@ -29,9 +29,9 @@ SOFTWARE.
 #define INDICATORS_SETTING
 
 #include <cstddef>
-#include <indicators/color.hpp>
-#include <indicators/font_style.hpp>
-#include <indicators/progress_type.hpp>
+#include <third_party/indicators/color.hpp>
+#include <third_party/indicators/font_style.hpp>
+#include <third_party/indicators/progress_type.hpp>
 #include <string>
 #include <tuple>
 #include <type_traits>

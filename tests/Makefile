@@ -4,10 +4,10 @@ CXXFLAGS := -std=c++20 -Ofast -march=native -flto -mtune=native -funroll-loops -
 LDFLAGS := -ltbb -lbenchmark -lpthread
 
 # Include directories
-INCLUDE := -I../include -I../include/indicators -I. -I../include/indicators/details -I../include/boost -I../include/tbb
+INCLUDE := -I../include -I. -I../include/boost -I../include/tbb
 
 # Targets
-TARGETS := verify_z2.out verify_dyadic.out verify_dyadic_vs_z2.out canon_regression.out
+TARGETS := verify_dyadic.out verify_dyadic_vs_z2.out canon_regression.out
 
 CANON_OBJS := \
 	canon_regression.o \
@@ -32,13 +32,7 @@ all: $(TARGETS)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Build individual targets
-# verify_sqrt2_int.out: verify_sqrt2_int.o
-# 	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
-
-verify_z2.out: verify_z2.o   # Now correctly links with Z2_old.o
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
-
-# Dyadic mirror of the Z2 verification (reduced ranges)
+# Dyadic mirror verification (reduced ranges)
 verify_dyadic.out: verify_dyadic.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
 

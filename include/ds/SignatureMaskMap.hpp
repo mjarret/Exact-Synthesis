@@ -4,7 +4,6 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <cassert>
 
 namespace ds {
 
@@ -23,7 +22,6 @@ struct SignatureMaskMap {
 
     // Add index 'idx' to the bucket for 'sig'.
     void add(uint16_t sig, uint8_t idx) {
-        assert(idx < 6);
         // Try to find existing signature
         for (std::size_t i = 0; i < used_; ++i) {
             if (entries_[i].sig == sig) {
@@ -32,7 +30,6 @@ struct SignatureMaskMap {
             }
         }
         // New entry
-        assert(used_ < kMaxEntries);
         entries_[used_].sig = sig;
         entries_[used_].mask = static_cast<uint8_t>(1u << idx);
         ++used_;
@@ -60,7 +57,6 @@ struct SignatureMaskMap {
     struct MaskRef {
         Entry* e;
         MaskRef& operator|=(uint8_t idx) {
-            assert(idx < 6);
             e->mask = static_cast<uint8_t>(e->mask | (1u << idx));
             return *this;
         }
@@ -74,7 +70,6 @@ struct SignatureMaskMap {
         for (std::size_t i = 0; i < used_; ++i) {
             if (entries_[i].sig == sig) return MaskRef{ &entries_[i] };
         }
-        assert(used_ < kMaxEntries);
         entries_[used_].sig = sig;
         entries_[used_].mask = 0;
         return MaskRef{ &entries_[used_++] };

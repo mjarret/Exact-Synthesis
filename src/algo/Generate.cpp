@@ -57,7 +57,6 @@ static inline void parallel_for_each_with_bar(Iter begin, Iter end,
     const std::size_t interval_size = std::max<std::size_t>(total_elems / 100u, 1u);
 
     tbb::parallel_for_each(begin, end, [&](const auto& elem) {
-        if (!interval_size) { body(elem); return; }
         body(elem);
         auto& local_counter = local_counters.local();
         ++local_counter;
@@ -122,8 +121,9 @@ std::optional<SO6> build_two_lookup_tables_until_match(LUT& first, LUT& second) 
     for (int depth = 0; depth < stored_depth_max; ++depth) {
         // Expand first side against second_union
         std::atomic<bool> connected{false};
-        
-        auto pred = [&](const SO6& s, LUT lut){ 
+
+        // Avoid copying LUTs: pass by const reference when checking membership.
+        auto pred = [&](const SO6& s, const LUT& lut){
             bool r = (lut.back().find(s) != lut.back().end()); 
             if (r) connected.store(true, std::memory_order_relaxed); 
             return r; 
@@ -152,20 +152,55 @@ void extend_lookup_table_bf(LUT& gen_set) {
     indicators::show_console_cursor(false);
     const auto& current = gen_set.current();
 
-    std::unique_ptr<indicators::ProgressTracker> bars = std::make_unique<indicators::ProgressTracker>(gen_set.size()-1, gen_set.current().size() * 15, gen_set.current().size() * 15);
+    // Maximum T-word length to explore from each leaf.
+    constexpr int kMaxDepth = 4;
 
-    parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 15, bars.get(),
-        [&]() { return 0u; }, // no insertion in this raw extension; just show progress
-        [&](const SO6& S) {
-            const uint8_t last_T = S.last_T;
-            for (uint8_t T = 0; T < 15; ++T) {
-                if (T == last_T) continue;
-                SO6 child = T_OperatorRuntime(T, false) * S;
-                (void)child;
-            }
-        });
+    // For this brute-force phase we treat "work" as iterating over leaves in
+    // the current layer and, for each leaf, exploring all T-words of a given
+    // length d, then repeating for d+1, etc. We drive the progress bars one
+    // depth at a time so that they reflect the per-depth sweeps clearly.
+    for (int depth = 0; depth < kMaxDepth; ++depth) {
+        std::atomic<std::size_t> processed{0};
 
-    // No finalization here; this extension does not insert into LUT
+        std::unique_ptr<indicators::ProgressTracker> bars =
+            std::make_unique<indicators::ProgressTracker>(
+                static_cast<int>(gen_set.size() + depth - 1),
+                current.size(),
+                current.size());
+
+        parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 1, bars.get(),
+            [&]() { return processed.load(std::memory_order_relaxed); },
+            [&](const SO6& S) {
+                processed.fetch_add(1, std::memory_order_relaxed);
+                const uint8_t last_T = S.last_T;
+
+                // Enumerate all base-14 codes that map to admissible
+                // T-sequences of length = depth (skipping the forbidden T
+                // on each step, as in BFSExtensionRawRange).
+                std::size_t count = 1;
+                for (int i = 0; i < depth; ++i) count *= 14u;
+
+                for (std::size_t code = 0; code < count; ++code) {
+                    SO6 cur = S;
+                    std::size_t x = code;
+                    uint8_t forbid = last_T;
+                    for (int pos = 0; pos < depth; ++pos) {
+                        uint8_t d = static_cast<uint8_t>(x % 14u);
+                        x /= 14u;
+                        uint8_t t = static_cast<uint8_t>(d + (d >= forbid ? 1u : 0u));
+                        cur = T_OperatorRuntime(t, false) * cur;
+                        forbid = t;
+                    }
+                    (void)cur;
+                }
+            });
+
+        // This brute-force phase does not insert into the LUT, but we still want
+        // the tracker to finalize timing and close out the bars cleanly. Use the
+        // number of processed leaves as the "found" count so the final snapshot
+        // shows a non-zero numerator instead of "0 / N".
+        bars->complete(processed.load(std::memory_order_relaxed));
+    }
 }
 
 } // namespace algo

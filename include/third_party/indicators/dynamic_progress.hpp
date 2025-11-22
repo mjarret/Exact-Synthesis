@@ -7,11 +7,11 @@
 
 #include <atomic>
 #include <functional>
-#include <indicators/color.hpp>
-#include <indicators/setting.hpp>
-#include <indicators/cursor_control.hpp>
-#include <indicators/cursor_movement.hpp>
-#include <indicators/details/stream_helper.hpp>
+#include <third_party/indicators/color.hpp>
+#include <third_party/indicators/setting.hpp>
+#include <third_party/indicators/cursor_control.hpp>
+#include <third_party/indicators/cursor_movement.hpp>
+#include <third_party/indicators/details/stream_helper.hpp>
 #include <iostream>
 #include <memory>
 #include <mutex>

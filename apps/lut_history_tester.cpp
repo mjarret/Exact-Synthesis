@@ -17,7 +17,6 @@
 #include <mutex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/blocked_range.h>
-#include <tbb/parallel_for_each.h>
 #include <tbb/global_control.h>
 #include <memory>
 
@@ -52,15 +51,6 @@ Args parse_args(int argc, char** argv) {
         else if (auto* v = val("--threads")) a.threads = std::max(0, std::atoi(v));
     }
     return a;
-}
-
-// Recover layer index of s inside lut; returns -1 if missing.
-int layer_of(LUT& lut, const SO6& s) {
-    int idx = 0;
-    for (auto it = lut.layers_begin(); it != lut.layers_end(); ++it, ++idx) {
-        if (it->find(s) != it->end()) return idx;
-    }
-    return -1;
 }
 
 SO6 rebuild_from_path(const SO6& root, const std::vector<uint8_t>& path) {

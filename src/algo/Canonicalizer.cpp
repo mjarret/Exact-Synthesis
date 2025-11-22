@@ -399,12 +399,8 @@ void SO6::canonical_form() {
 
 
     do { 
-#ifdef DS_ENUM_CYCLE
-        // Fast path: use cached full-cycle permutation for rows
-        row_ecs.fill_current_perm(row_perm.data());
-#else
+        // Materialize candidate row permutation from equivalence classes
         materialize_permutation(row_ecs, row_keys, row_perm.data());
-#endif
         // Use span view to stay abstract while hitting pointer fast-path
         const std::span<const uint8_t, 6> row_span{row_perm};
 
@@ -466,9 +462,5 @@ FrequencyTable SO6::col_equivalence_classes() {
 }
 
 bool SO6::get_next_equivalence_class(FrequencyTable& ecs) {
-#ifdef DS_ENUM_CYCLE
-    return ecs.next_via_cycle();
-#else
     return ecs.next_via_lut();
-#endif
 }

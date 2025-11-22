@@ -1,6 +1,7 @@
 # Compiler and Flags
 CXX := g++  # default
-CXXFLAGS := -std=c++20 -Ofast -pthread -funroll-loops -flto=auto -march=native -Wfatal-errors -DNDEBUG -fno-math-errno -fno-trapping-math
+CXXFLAGS := -std=c++20 -Ofast -pthread -funroll-loops -flto=auto -march=native -Wfatal-errors -DNDEBUG \
+  -fdata-sections -ffunction-sections -fomit-frame-pointer
 
 # Easy compiler switch: COMPILER=gcc|clang (defaults to clang)
 COMPILER ?= clang
@@ -8,26 +9,20 @@ ifeq ($(COMPILER),clang)
   # Some systems only ship 'clang' (not clang++) — use clang driver
   CXX := clang
   # Prefer ThinLTO with Clang and adjust deprecated -Ofast
-  CXXFLAGS := $(filter-out -flto=auto -Ofast,$(CXXFLAGS)) -flto=thin -O3 -ffast-math
+  CXXFLAGS := $(filter-out -flto=auto -Ofast,$(CXXFLAGS)) -flto=thin -O3 -fno-semantic-interposition
 else ifeq ($(COMPILER),gcc)
   CXX := g++
+  # GCC-specific perf tweaks
+  CXXFLAGS += -fno-semantic-interposition -fno-plt
 endif
 
 # Optional user-provided additions without overriding defaults
 EXTRA_CXXFLAGS ?=
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
-# Numeric backend selection: NUMERIC=z2 (default) or NUMERIC=dyadic
-NUMERIC ?= z2
-ifeq ($(NUMERIC),dyadic)
-  CXXFLAGS += -DEXACT_USE_DYADIC_SQRT2=1
-endif
+# Numeric backend: unified on Dyadic (no compile-time switch)
 
-# Enumerator selection: ENUM=cycle to enable OP6-style cycle caching
-ENUM ?= lut
-ifeq ($(ENUM),cycle)
-  CXXFLAGS += -DDS_ENUM_CYCLE=1
-endif
+# Enumerator selection flag removed; OP6-style cycle caching is no longer compiled.
 
 
 
@@ -62,13 +57,28 @@ ifeq ($(WARN),1)
   CXXFLAGS += -Wall -Wextra -Wconversion -Wshadow -Wpedantic
 endif
 #--target=x86_64-pc-linux-gnu 
-INCLUDE := -I. -Iinclude -Iinclude/indicators -Iinclude/indicators/details -Iinclude/third_party
+INCLUDE := -I. -Iinclude -Iinclude/third_party
 # Allow caller to inject include paths (e.g., for phmap/absl/folly)
 EXTRA_INCLUDE ?=
 INCLUDE += $(EXTRA_INCLUDE)
 LDFLAGS := -ltbb
 ifeq ($(COMPILER),clang)
   LDFLAGS += -lstdc++
+endif
+ # Link-time perf optimizations and dead code removal
+LDFLAGS += -Wl,-O2 -Wl,--gc-sections -Wl,--as-needed
+
+# Optional linker selection and ThinLTO cache for faster incremental links
+LINKER ?=
+ifeq ($(LINKER),lld)
+  CXXFLAGS += -fuse-ld=lld
+  # LLD-only: identical code folding can shrink code size and i-cache pressure
+  LDFLAGS += -Wl,--icf=all
+  # ThinLTO cache directory is also an LLD-only flag; only add it when we are
+  # explicitly using lld as the linker.
+  ifeq ($(COMPILER),clang)
+    LDFLAGS += -Wl,--thinlto-cache-dir=.thinlto-cache
+  endif
 endif
 
 # Source Files
@@ -94,23 +104,12 @@ DEBUG_LDFLAGS := -ltcmalloc
 # Binaries produced by this workspace
 BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester
 
-# Benchmarks / helper binaries
+# Benchmarks / helper binaries we actively support
 BENCH_BINS := \
-  lehmer_bench \
-  row_ecs_bench \
-  ord6_enum_bench \
-  op6_enum_bench \
-  linear_transform_bench \
   dyadic_bench \
+  lut_vs_T_depth_bench \
   lut_build_bench \
-  lut_sweep_bench \
-  cycle_build_bench \
-  mitm_bench \
-  mitm_depth_bench \
-  mitm_seed_gen \
-  col_compare_bench \
-  main_run_bench \
-  dyadic_int_bench
+  mitm_bench
 
 # Default Rule
 all: $(TARGET)
@@ -152,8 +151,12 @@ $(TARGET): $(OBJ)
 %.o: %.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
-# Stabilize T-move codegen if optimizer is too aggressive
+# Optional hardening for T_Operator TU (aliasing/wrap semantics)
+# Enable with T_OP_SAFE=1 to add: -fno-strict-aliasing -fwrapv
+T_OP_SAFE ?= 0
+ifeq ($(T_OP_SAFE),1)
 src/T_Operator.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
+endif
 
 # Debug
 debug: CXXFLAGS := $(filter-out -DNDEBUG,$(CXXFLAGS)) $(DEBUG_CXXFLAGS)
@@ -192,6 +195,8 @@ docs:
 print-vars:
 	@echo "INCLUDE=$(INCLUDE)"
 	@echo "LDFLAGS=$(LDFLAGS)"
+	@echo "CXXFLAGS=$(CXXFLAGS)"
+	@echo "COMPILER=$(COMPILER) LINKER=$(LINKER)"
 
 # Sanitizers (opt-in dev builds)
 asan:
@@ -199,6 +204,19 @@ asan:
 
 ubsan:
 	$(MAKE) clean ; $(MAKE) CXXFLAGS='-std=c++20 -O1 -g -fsanitize=undefined -fno-omit-frame-pointer $(INCLUDE)'
+
+# Clang PGO helpers (instrument/run/use). PROFILE points to .profdata
+.PHONY: pgo-gen pgo-use
+PROFILE ?= code.profdata
+pgo-gen:
+	$(MAKE) clean ; \
+	$(MAKE) EXTRA_CXXFLAGS='-fprofile-instr-generate -fcoverage-mapping' LDFLAGS='$(LDFLAGS) -fprofile-instr-generate' ; \
+	cp $(TARGET) main_pgo_gen
+
+pgo-use:
+	@if [ ! -f "$(PROFILE)" ]; then echo "Missing PROFILE=$(PROFILE). Run the instrumented binary to generate .profraw then llvm-profdata merge -output=$(PROFILE) *.profraw"; exit 1; fi
+	$(MAKE) clean ; \
+	$(MAKE) EXTRA_CXXFLAGS='-fprofile-instr-use=$(PROFILE)'
 
 .PHONY: auto-add
 auto-add:
@@ -228,59 +246,10 @@ apps/canonical_form_print.o: apps/canonical_form_print.cpp
 .PHONY: lut_history_tester
 lut_history_tester: apps/lut_history_tester.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
-# Google Benchmark target for Lehmer6 (requires libbenchmark-dev)
-.PHONY: lehmer_bench
-lehmer_bench: benchmarks/lehmer6_bench.o
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -I../Exact-Synthesis-bak-2/include $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-benchmarks/lehmer6_bench.o: benchmarks/lehmer6_bench.cpp include/ds/Lehmer6.hpp ../Exact-Synthesis-bak-2/include/ds/Lehmer6.hpp
-	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -I../Exact-Synthesis-bak-2/include -c $< -o $@
-
-# Row equivalence classes benchmark
-.PHONY: row_ecs_bench
-row_ecs_bench: benchmarks/row_ecs_bench.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/T_Operator.o
-	$(CXX) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-benchmarks/row_ecs_bench.o: benchmarks/row_ecs_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
-	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) -c $< -o $@
-
-# Order6 enumeration microbench
-.PHONY: ord6_enum_bench
-ord6_enum_bench: benchmarks/ord6_enum_bench.o
-	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-benchmarks/ord6_enum_bench.o: benchmarks/ord6_enum_bench.cpp include/ds/FlatFrequencyTable.hpp include/ds/Order6.hpp
-	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-# OrderedPartition6 enumeration microbench (uses bak-2 includes exclusively first)
-.PHONY: op6_enum_bench
-op6_enum_bench: benchmarks/op6_enum_bench.o
-	$(CXX) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-benchmarks/op6_enum_bench.o: benchmarks/op6_enum_bench.cpp ../Exact-Synthesis-bak-2/include/ds/OrderedPartition6.hpp
-	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) -I../Exact-Synthesis-bak-2/include $(INCLUDE) -c $< -o $@
-# Linear transform vs T operator benchmarks
-.PHONY: linear_transform_bench
-linear_transform_bench: benchmarks/linear_transform_bench.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/algo/Generate.o src/T_Operator.o
-	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-benchmarks/linear_transform_bench.o: benchmarks/linear_transform_bench.cpp include/so6/T_Operator.hpp include/ds/LinearTransform.hpp
-	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 # Build LUT (T=8) end-to-end microbenchmarks
-.PHONY: lut_build_bench cycle_build_bench
+.PHONY: lut_build_bench
 lut_build_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
-		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-.PHONY: lut_sweep_bench
-lut_sweep_bench:
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
-		benchmarks/lut_sweep_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-cycle_build_bench:
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS -DDS_ENUM_CYCLE=1 \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
@@ -289,6 +258,7 @@ dyadic_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
 		benchmarks/dyadic_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
+# Dyadic add benchmark (generic implementation)
 # MITM meet-in-the-middle benchmark on random targets
 .PHONY: mitm_bench
 mitm_bench:
@@ -296,45 +266,12 @@ mitm_bench:
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
 		benchmarks/mitm_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
-# MITM runtime by optimal depth benchmark
-.PHONY: mitm_depth_bench
-mitm_depth_bench:
+.PHONY: lut_vs_T_depth_bench
+lut_vs_T_depth_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
-		benchmarks/mitm_depth_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
+		benchmarks/lut_vs_T_depth_bench.cpp -o $@ -lbenchmark -O3 -lpthread $(LDFLAGS)
 
-# MITM seed generator (offline script to precompute benchmark seeds)
-.PHONY: mitm_seed_gen
-mitm_seed_gen:
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
-		benchmarks/mitm_seed_gen.cpp -o $@ $(LDFLAGS)
-
-# Column comparison microbenchmarks (current vs raw)
-.PHONY: col_compare_bench
-col_compare_bench:
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
-		benchmarks/col_compare_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-# Dyadic vs Int32 microbenchmarks
-.PHONY: dyadic_int_bench
-dyadic_int_bench:
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		benchmarks/dyadic_int_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
-
-# Build two main variants (Z2 vs Dyadic) and a wrapper benchmark that runs them.
-.PHONY: main_z2 main_dyadic main_run_bench
-main_z2:
-	$(MAKE) clean
-	$(MAKE) NUMERIC=z2 $(TARGET)
-	cp $(TARGET) main_z2
-
-main_dyadic:
-	$(MAKE) clean
-	$(MAKE) NUMERIC=dyadic $(TARGET)
-	cp $(TARGET) main_dyadic
-
-main_run_bench: main_z2 main_dyadic
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
-		benchmarks/main_run_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+# Core benchmark bundle for day-to-day profiling.
+.PHONY: core_bench
+core_bench: dyadic_bench lut_build_bench lut_vs_T_depth_bench mitm_bench

@@ -10,13 +10,13 @@ constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
 
 namespace {
-    // Load 24-bit packed Z2 from column base and row index (column-major, 3 bytes per entry)
-    static inline __attribute__((always_inline)) Z2 load_z2_from_col_row(const uint8_t* base_col, uint8_t row) {
+    // Load 24-bit packed DyadicSqrt2 from column base and row index (column-major, 3 bytes per entry)
+    static inline __attribute__((always_inline)) DyadicSqrt2 load_DyadicSqrt2_from_col_row(const uint8_t* base_col, uint8_t row) {
         const uint8_t* p = base_col + static_cast<int>(row) * 3;
         uint32_t v = static_cast<uint32_t>(p[0])
                    | (static_cast<uint32_t>(p[1]) << 8)
                    | (static_cast<uint32_t>(p[2]) << 16);
-        return Z2(v);
+        return DyadicSqrt2(v);
     }
 
     // Compare a single column under row/col permutations and sign masks
@@ -38,8 +38,8 @@ namespace {
 
         // Phase 1: find orientation (first non-zero)
         for (; i < 6; ++i) {
-            const Z2 L = load_z2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
-            const Z2 R = load_z2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 L = load_DyadicSqrt2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 R = load_DyadicSqrt2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
             comp1 = L.int_c <=> 0;
             comp2 = R.int_c <=> 0;
             if (comp1 == Equal && comp2 == Equal) continue;
@@ -54,8 +54,8 @@ namespace {
 
         // Phase 2: lex compare with sign masks
         for (; i < 6; ++i) {
-            const Z2 L = load_z2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
-            const Z2 R = load_z2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 L = load_DyadicSqrt2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 R = load_DyadicSqrt2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
             const bool first_is_neg  = (((first_sign_mask  >> i) & utils::BITS) == utils::NEG);
             const bool second_is_neg = (((second_sign_mask >> i) & utils::BITS) == utils::NEG);
             const std::strong_ordering cmp = (second_is_neg ? -R : R) <=> (first_is_neg ? -L : L);
@@ -82,10 +82,9 @@ SO6::SO6()
 const SO6& SO6::identity() {
     static const SO6 I = []() {
         SO6 temp;
-        for (uint8_t k = 0; k < 6; k++) temp.set_element(k, k, Z2(1, 0, 0));
+        for (uint8_t k = 0; k < 6; k++) temp.set_element(k, k, DyadicSqrt2(1, 0, 0));
         temp.canonical_form();
         temp.last_T = 15;
-        temp.recompute_hash();
         return temp;
     }();
     return I;
@@ -120,12 +119,12 @@ SO6 SO6::operator*(const SO6 &other) const
     SO6 prod;
     for (int row = 0; row < 6; ++row) for (int col = 0; col < 6; ++col)
     {
-        Z2  cur = 0;
+        DyadicSqrt2  cur = 0;
         for (int k = 0; k < 6; ++k)
         {
-                const Z2 left_element = get_element(row, k);
+                const DyadicSqrt2 left_element = get_element(row, k);
                 if (left_element.int_c == 0) continue;
-                Z2 right_element = other.get_element(k, col);
+                DyadicSqrt2 right_element = other.get_element(k, col);
                 if (right_element.int_c == 0) continue;
                 cur += (left_element * right_element);
         }
@@ -158,8 +157,8 @@ bool SO6::is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm
     uint8_t cand_row_a[6];
     uint8_t cand_col_a[6];
     for (int i = 0; i < 6; ++i) {
-        cur_row_a[i]  = row_perm_lh_[i];
-        cur_col_a[i]  = col_perm_lh_[i];
+        cur_row_a[i]  = row_perm_lh()[i];
+        cur_col_a[i]  = col_perm_lh()[i];
         cand_row_a[i] = row_perm[i];
         cand_col_a[i] = col_perm[i];
     }
@@ -176,8 +175,8 @@ bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col
     uint8_t cur_row_a[6];
     uint8_t cur_col_a[6];
     for (int i = 0; i < 6; ++i) {
-        cur_row_a[i] = row_perm_lh_[i];
-        cur_col_a[i] = col_perm_lh_[i];
+        cur_row_a[i] = row_perm_lh()[i];
+        cur_col_a[i] = col_perm_lh()[i];
     }
     for (int col = 0; col < 6; ++col) {
         auto cmp = cmp_col_fast(*this, cur_row_a, cur_col_a, cand_row, cand_col, sign_convention, sign_perm, col);
@@ -198,7 +197,7 @@ bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col
  * elements in each row, and the values are vectors containing the indices of
  * rows that share the same frequency distribution.
  *
- * @return A map where each key is a map of Z2 to int representing the frequency
+ * @return A map where each key is a map of DyadicSqrt2 to int representing the frequency
  *         distribution of a row, and each value is a vector of row indices that
  *         have the same frequency distribution.
  */
@@ -206,7 +205,7 @@ bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col
 
 const std::strong_ordering SO6::operator<=>(const SO6 &other) const
 {
-    std::strong_ordering comp = col_hash <=> other.col_hash;
+    std::strong_ordering comp = column_hash() <=> other.column_hash();
 
     if (comp == Equal) {
         // Decode only for comparison from Lehmer6: build raw arrays via operator[]
@@ -215,10 +214,10 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
         uint8_t other_row_a[6];
         uint8_t other_col_a[6];
         for (int i = 0; i < 6; ++i) {
-            this_row_a[i]  = row_perm_lh_[i];
-            this_col_a[i]  = col_perm_lh_[i];
-            other_row_a[i] = other.row_perm_lh_[i];
-            other_col_a[i] = other.col_perm_lh_[i];
+            this_row_a[i]  = row_perm_lh()[i];
+            this_col_a[i]  = col_perm_lh()[i];
+            other_row_a[i] = other.row_perm_lh()[i];
+            other_col_a[i] = other.col_perm_lh()[i];
         }
 
         struct ArrayColIter {
@@ -227,11 +226,9 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
             const uint8_t* col;   // size 6
             int col_idx;          // 0..5 (unpermuted column index)
             int i;                // 0..6 (row step)
-            Z2 operator*() const {
+            DyadicSqrt2 operator*() const {
                 const int c = col ? col[col_idx] : col_idx;
                 const int r = row ? row[i] : i;
-                ASSUME(unsigned(c) < 6u);
-                ASSUME(unsigned(r) < 6u);
                 return s.get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c)); // c*6 + r
             }
             ArrayColIter& operator++() { ++i; return *this; }
@@ -267,8 +264,8 @@ void SO6::print_raw(std::ostream& os) const {
 }
 
 void SO6::print_with_perms(std::ostream& os) const {
-    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh_.bits());
-    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh_.bits());
+    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh().bits());
+    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh().bits());
     int count_r = 0;
     uint8_t col_sign_mask = col_sign();
     for (auto src_row : row_perm) {
@@ -291,8 +288,8 @@ void SO6::print_with_perms(std::ostream& os) const {
 
 SO6 SO6::materialize_canonical() const {
     SO6 out;
-    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh_.bits());
-    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh_.bits());
+    const auto& row_perm = Lehmer6::decode_ref(row_perm_lh().bits());
+    const auto& col_perm = Lehmer6::decode_ref(col_perm_lh().bits());
     for (uint8_t r = 0; r < 6; ++r) {
         uint8_t src_row = row_perm[r];
         bool row_neg = ((sign_convention >> src_row) & 1u) != 0;
@@ -314,8 +311,8 @@ SO6 SO6::materialize_canonical() const {
 uint8_t SO6::col_sign() const {
     uint8_t mask = 0;
     for (uint8_t c = 0; c < 6; ++c) {
-        for (auto r : row_perm_lh_.to_array()) {
-            Z2 v = get_element(r,c);
+        for (auto r : row_perm_lh().to_array()) {
+            DyadicSqrt2 v = get_element(r,c);
             if (v > 0) {
                 // bit remains 0 for positive
                 break;

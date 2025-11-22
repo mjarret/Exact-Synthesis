@@ -4,7 +4,7 @@
  *        permutation bookkeeping used for exact synthesis search.
  *
  * High level overview
- * - Storage: a flat array of 36 `Z2` entries in column-major order.
+ * - Storage: a flat array of 36 `DyadicSqrt2` entries in column-major order.
  * - Canonicalization: the matrix maintains row/col permutations and a sign
  *   convention to compare matrices lexicographically for a canonical form.
  * - Hashing: two 16-bit rolling signatures (`hash`, `col_hash`) combining
@@ -29,7 +29,6 @@
 #include <utility>
 #include <ostream>
 #include "sort/sort6.hpp"
-#include "Z2.hpp"
 #include "ds/SmallFreqMap.hpp"
 #include "ds/Lehmer6.hpp"
 #include "ds/Order6.hpp"
@@ -59,10 +58,21 @@ inline constexpr const char* kHashBackendName = "flat";
  *   and equivalence classes.
  */
 class SO6 {
+private:
+        /// Precomputed 16-bit signatures. Used for fast comparison pre-checks.
+        /// A value of 0 for `hash` is treated as "not computed yet" and will
+        /// trigger a lazy recomputation on first access via accessors.
+        uint16_t hash = 0, col_hash = 0;
+
+        /// Lehmer-encoded permutations for the current canonical representative.
+        /// We use `bits() == Lehmer6::SENTINEL` as a sentinel meaning "not yet
+        /// canonicalized"; canonical_form() overwrites these with valid codes.
+        Lehmer6 col_perm_lh_{Lehmer6::from_index(Lehmer6::SENTINEL)},
+                row_perm_lh_{Lehmer6::from_index(Lehmer6::SENTINEL)};
 public:
         // ---------- Storage ----------
         /// Flat column-major storage: index = col*6 + row
-        uint8_t arr24_[36 * 3]{};     // packed 24-bit Z2
+        uint8_t arr24_[36 * 3]{};     // packed 24-bit DyadicSqrt2
 
         /// Misc packed flags used during search/canonicalization
         union {
@@ -74,18 +84,12 @@ public:
             };
         };
 
-        /// Precomputed 16-bit signatures. Used for fast comparison pre-checks.
-        uint16_t hash = 0, col_hash = 0;
-
-        /// Lehmer-encoded permutations for the current canonical representative
-        Lehmer6 col_perm_lh_{}, row_perm_lh_{};
-
         // ---------- Construction ----------
         /// Default constructs the zero matrix.
         SO6();
 
         /// Initialize from a 36-element list in column-major order.
-        SO6(std::initializer_list<Z2> list) {
+        SO6(std::initializer_list<DyadicSqrt2> list) {
             size_t i = 0;
             for (const auto& z : list) {
                 uint8_t row = i % 6;
@@ -101,20 +105,23 @@ public:
         uint8_t get_index(const uint8_t row, const uint8_t col) const { return col * 6 + row; }
 
         /// Read element (by value) from packed storage.
-        inline Z2 get_element(const uint8_t row, const uint8_t col) const {
+        inline DyadicSqrt2 get_element(const uint8_t row, const uint8_t col) const {
             int off = get_index(row, col) * 3;
             uint32_t v = arr24_[off]
                        | (uint32_t(arr24_[off + 1]) << 8)
                        | (uint32_t(arr24_[off + 2]) << 16);
-            return Z2(v);
+            return DyadicSqrt2(v);
         }
         /// Write element into packed storage (stores lower 24 bits of z.data).
-        inline void set_element(const uint8_t row, const uint8_t col, const Z2& z) {
+        inline void set_element(const uint8_t row, const uint8_t col, const DyadicSqrt2& z) {
             int off = get_index(row, col) * 3;
             uint32_t v = (z.data & 0xFFFFFFu);
             arr24_[off]     = v & 0xFFu;
             arr24_[off + 1] = (v >> 8) & 0xFFu;
             arr24_[off + 2] = (v >> 16) & 0xFFu;
+            // Mark cached hashes as invalid; they will be recomputed lazily.
+            hash = 0;
+            col_hash = 0;
         }
 
         // ---------- Ordering and identity ----------
@@ -131,6 +138,50 @@ public:
         ///  - hash accumulates row_frequency_signature over rows and (col_freq ^ (col_freq>>1)) over cols
         ///  - col_hash accumulates (col_freq ^ (col_freq>>1)) over cols
         void recompute_hash();
+
+        // Lazily computed accessors for the hash fields. A zero value in
+        // `hash` indicates "not computed yet" and will trigger a full
+        // recomputation the first time one of these is called.
+        inline uint16_t primary_hash() const {
+            if (hash == 0) {
+                const_cast<SO6*>(this)->recompute_hash();
+            }
+            return hash;
+        }
+
+        inline uint16_t column_hash() const {
+            if (hash == 0) {
+                const_cast<SO6*>(this)->recompute_hash();
+            }
+            return col_hash;
+        }
+
+        // Accessors for canonicalization metadata; prefer these over reaching
+        // into the underlying fields directly. When the internal Lehmer code
+        // is left at the sentinel value, we materialize the canonical
+        // form on first access even though these methods are const.
+        inline const Lehmer6& row_perm_lh() const {
+            if (row_perm_lh_.bits() == Lehmer6::SENTINEL) {
+                const_cast<SO6*>(this)->canonical_form();
+            }
+            return row_perm_lh_;
+        }
+
+        inline const Lehmer6& col_perm_lh() const {
+            if (col_perm_lh_.bits() == Lehmer6::SENTINEL) {
+                const_cast<SO6*>(this)->canonical_form();
+            }
+            return col_perm_lh_;
+        }
+        inline uint8_t sign_mask() const { return sign_convention; }
+        inline void canonical_reset() {
+            row_perm_lh_ = Lehmer6::from_index(Lehmer6::SENTINEL);
+            col_perm_lh_ = Lehmer6::from_index(Lehmer6::SENTINEL);
+        }
+
+        inline void set_row_perm_lh(const Lehmer6& p) { row_perm_lh_ = p; }
+        inline void set_col_perm_lh(const Lehmer6& p) { col_perm_lh_ = p; }
+        inline void set_sign_mask(uint8_t m) { sign_convention = m; }
 
         // ---------- Frequency helpers / equivalence classes ----------
         /// Build row equivalence classes keyed by row frequency signatures.
@@ -194,23 +245,20 @@ public:
         /// and 1 if that top non-zero element has int_c < 0. Columns with all zeros contribute 0.
         uint8_t col_sign() const;
         
-        // ---------- Frequency bookkeeping ----------
-        // No stored row/column frequency maps in the simplified policy.
-
         // Helpers: compute frequency signatures by scanning entries (no stored maps)
         static inline uint16_t row_frequency_signature(const SO6& s, int row) {
-            std::array<Z2, 6> vals{};
+            std::array<DyadicSqrt2, 6> vals{};
             for (int c = 0; c < 6; ++c) vals[c] = std::abs(s.get_element(row, c));
             return signature(vals);
         }
 
         static inline uint16_t col_frequency_signature(const SO6& s, int col) {
-            std::array<Z2, 6> vals{};
+            std::array<DyadicSqrt2, 6> vals{};
             for (int r = 0; r < 6; ++r) vals[r] = std::abs(s.get_element(r, col));
             return signature(vals);
         }
 
-        static inline uint16_t signature(std::array<Z2, 6>& vals) {
+        static inline uint16_t signature(std::array<DyadicSqrt2, 6>& vals) {
             size_t acc = 0;
             uint8_t seen = 0;                    // bit i == 1 -> vals[i] already accounted for
 
@@ -247,13 +295,13 @@ public:
         }
 
         // ---------- Hash helpers ----------
-        /// Hash a single (Z2, count) contribution using the configured policy.
-        static inline uint16_t z_freq_hash(const Z2 z, const int i) {
+        /// Hash a single (DyadicSqrt2, count) contribution using the configured policy.
+        static inline uint16_t z_freq_hash(const DyadicSqrt2 z, const int i) {
             constexpr auto mix64_variant = [](uint16_t x) {
                 x ^= x >> 5;
                 return x;
             };
-            uint16_t seed = (std::hash<Z2>{}(std::abs(z)) << 3) | (i & 0x7);
+            uint16_t seed = (std::hash<DyadicSqrt2>{}(std::abs(z)) << 3) | (i & 0x7);
             return mix64_variant(seed);
         }
         /// Combine all entries of a SmallFreqMap into a stable signature.
@@ -265,7 +313,7 @@ public:
 namespace std {
     template <>
     struct hash<SO6> {
-        uint16_t operator()(const SO6& s) const { return s.hash; }
+        uint16_t operator()(const SO6& s) const { return s.primary_hash(); }
     };
 }
 #endif

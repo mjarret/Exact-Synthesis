@@ -17,8 +17,8 @@
 #include <tbb/concurrent_queue.h>
 #include "util/progress_tracker.hpp"
 #ifndef EXACT_DISABLE_INDICATORS
-#include <indicators/dynamic_progress.hpp>
-#include <indicators/progress_bar.hpp>
+#include <third_party/indicators/dynamic_progress.hpp>
+#include <third_party/indicators/progress_bar.hpp>
 #endif
 
 // Global variables for I/O handling

@@ -7,9 +7,8 @@
 #include <iterator>
 #include <cstddef>
 #include <algorithm>
-#include "Z2.hpp"
 #include "ds/Count6.hpp"
-#include "util/assume.hpp"
+#include "DyadicSqrt2.hpp"
 
 // Layout: structure-of-arrays to avoid per-entry padding.
 // - keys[i] holds the Z2 key (packed to 24 bits)
@@ -58,8 +57,8 @@ struct SmallFreqMap {
     };
 
 
-    struct EntryRef { Z2 first; CountRef second; };
-    struct EntryConstRef { Z2 first; uint8_t second; };
+    struct EntryRef { DyadicSqrt2 first; CountRef second; };
+    struct EntryConstRef { DyadicSqrt2 first; uint8_t second; };
 
     class iterator {
     public:
@@ -124,20 +123,20 @@ struct SmallFreqMap {
     const_iterator begin() const { return const_iterator(this, 0); }
     const_iterator end() const { return const_iterator(this, capacity); }
 
-    iterator find(const Z2& k) {
+    iterator find(const DyadicSqrt2& k) {
         for (uint8_t i = 0; i < capacity; ++i) {
             if (get_count(i) != 0 && unpack_key(i) == k) return iterator(this, i);
         }
         return end();
     }
-    const_iterator find(const Z2& k) const {
+    const_iterator find(const DyadicSqrt2& k) const {
         for (uint8_t i = 0; i < capacity; ++i) {
             if (get_count(i) != 0 && unpack_key(i) == k) return const_iterator(this, i);
         }
         return end();
     }
 
-    CountRef operator[](const Z2& k) {
+    CountRef operator[](const DyadicSqrt2& k) {
         // Zero key is implicit remainder; treat as no-op
         if (k.data == 0) return CountRef{this, capacity};
         // Existing explicit slots 0..4
@@ -168,8 +167,8 @@ struct SmallFreqMap {
     }
 
     // Convenience helpers (inline, zero-cost abstraction)
-    void increment(const Z2& k) { (*this)[k]++; }
-    void decrement(const Z2& k) {
+    void increment(const DyadicSqrt2& k) { (*this)[k]++; }
+    void decrement(const DyadicSqrt2& k) {
         if (k.data == 0) return; // implicit remainder
         auto it = find(k);
         if (it != end()) {
@@ -203,14 +202,14 @@ struct SmallFreqMap {
     }
 
 private:
-    inline Z2 unpack_key(uint8_t i) const {
+    inline DyadicSqrt2 unpack_key(uint8_t i) const {
         const auto &b = keys24[i];
         uint32_t v = static_cast<uint32_t>(b[0])
                    | (static_cast<uint32_t>(b[1]) << 8)
                    | (static_cast<uint32_t>(b[2]) << 16);
-        return Z2(v);
+        return DyadicSqrt2(v);
     }
-    inline void pack_key(uint8_t i, const Z2& k) {
+    inline void pack_key(uint8_t i, const DyadicSqrt2& k) {
         const uint32_t v = static_cast<uint32_t>(k.data) & 0xFFFFFFu;
         keys24[i][0] = static_cast<uint8_t>(v & 0xFFu);
         keys24[i][1] = static_cast<uint8_t>((v >> 8) & 0xFFu);

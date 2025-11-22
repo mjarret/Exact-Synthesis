@@ -5,7 +5,6 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include "Z2.hpp"
 #include "so6/SO6.hpp"
 
 /**

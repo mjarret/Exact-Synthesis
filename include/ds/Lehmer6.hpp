@@ -6,7 +6,6 @@
 #include <bit>
 #include <span>
 #include <algorithm>
-#include "util/assume.hpp"
 
 /// Lehmer6
 /// --------
@@ -21,8 +20,15 @@
 /// The *information content* is exactly 10 bits. For tightly packed arrays, store
 /// `bits()` (0..719) into a custom 10-bit bit-packed container.
 class Lehmer6 {
-    // Exactly 10 information bits (rank in [0,719]).
+    // Exactly 10 information bits (rank in [0,719]) plus one sentinel (720).
     uint16_t code_ : 10;
+
+public:
+    // Number of real permutation ranks and the reserved sentinel code.
+    static constexpr uint16_t NUM_RANKS = 720u;        // valid ranks: 0..719
+    static constexpr uint16_t SENTINEL  = 720u;        // reserved "not yet canonicalized"
+
+private:
 
     static constexpr uint16_t FACT[7] = {1, 1, 2, 6, 24, 120, 720};
 
@@ -88,13 +94,14 @@ class Lehmer6 {
         return L;
     }
 
-    // On-demand global decoding table: rank (0..719) -> permutation array, built from packed15+final-digit
-    static inline const std::array<std::array<uint8_t, 6>, 720>& decoding_table() {
-        static const std::array<std::array<uint8_t, 6>, 720> tbl = [] {
-            std::array<std::array<uint8_t, 6>, 720> t{};
+    // On-demand global decoding table: rank (0..719) -> permutation array, plus
+    // one extra entry at SENTINEL used only as a safe fallback.
+    static inline const std::array<std::array<uint8_t, 6>, 721>& decoding_table() {
+        static const std::array<std::array<uint8_t, 6>, 721> tbl = [] {
+            std::array<std::array<uint8_t, 6>, 721> t{};
             const auto& P15 = packed15_table();
             const auto& F   = final_digit_by_pack();
-            for (uint16_t r = 0; r < 720; ++r) {
+            for (uint16_t r = 0; r < NUM_RANKS; ++r) {
                 const uint16_t b = P15[r];
                 std::array<uint8_t,6> p{};
                 p[0] = static_cast<uint8_t>( b        & 0x7u);
@@ -105,6 +112,9 @@ class Lehmer6 {
                 p[5] = F[b];
                 t[r] = p;
             }
+            // Sentinel rank decodes to identity; this value is never used for
+            // canonical permutations, only as a "not yet canonicalized" marker.
+            t[SENTINEL] = {0,1,2,3,4,5};
             return t;
         }();
         return tbl;
@@ -123,7 +133,6 @@ class Lehmer6 {
             // precondition: k < popcount(mask)
             mask &= (mask - 1);
         }
-        ASSUME(mask != 0);
         return static_cast<uint16_t>(std::countr_zero(mask));
     }
 
@@ -133,13 +142,14 @@ public:
     // Identity permutation [0,1,2,3,4,5] has rank 0.
     constexpr Lehmer6() : code_(0) {}
 
-    // Construct from raw 10-bit value; reduced modulo 720 for safety.
-    explicit constexpr Lehmer6(uint16_t bits) : code_(bits % 720u) {}
+    // Construct from raw 10-bit value; reduced modulo NUM_RANKS+1 for safety
+    // so that SENTINEL (720) can be preserved.
+    explicit constexpr Lehmer6(uint16_t bits) : code_(bits % (NUM_RANKS + 1u)) {}
 
     // Factory: from lexicographic index (0..719).
     static constexpr Lehmer6 from_index(uint16_t idx) {
         Lehmer6 p;
-        p.code_ = static_cast<uint16_t>(idx % 720u);
+        p.code_ = static_cast<uint16_t>(idx % (NUM_RANKS + 1u));
         return p;
     }
 
@@ -175,7 +185,12 @@ public:
     // Materialize the whole permutation via packed-15 + final-digit LUT.
     std::array<uint8_t, 6> to_array() const {
         std::array<uint8_t, 6> out{};
-        const uint16_t b = packed15_table()[code_];
+        const uint16_t idx = static_cast<uint16_t>(code_ % (NUM_RANKS + 1u));
+        if (idx == SENTINEL) {
+            out = {0,1,2,3,4,5};
+            return out;
+        }
+        const uint16_t b = packed15_table()[idx];
         out[0] = static_cast<uint8_t>( b        & 0x7u);
         out[1] = static_cast<uint8_t>((b >> 3) & 0x7u);
         out[2] = static_cast<uint8_t>((b >> 6) & 0x7u);
@@ -187,10 +202,10 @@ public:
 
     // Zero-copy accessors to the decoding row to avoid by-value array copies
     static inline const std::array<uint8_t, 6>& decode_ref(uint16_t bits) {
-        return decoding_table()[static_cast<size_t>(bits % 720u)];
+        return decoding_table()[static_cast<size_t>(bits % (NUM_RANKS + 1u))];
     }
     static inline const uint8_t* decode_ptr(uint16_t bits) {
-        return decoding_table()[static_cast<size_t>(bits % 720u)].data();
+        return decoding_table()[static_cast<size_t>(bits % (NUM_RANKS + 1u))].data();
     }
 
     // Apply this permutation to an input array of length 6 (in-place).
@@ -214,7 +229,7 @@ public:
 
     // Steps to the next rank; returns false on wrap-around (after 719 -> 0).
     [[nodiscard]] bool next_permutation() {
-        if (code_ + 1u < 720u) { ++code_; return true; }
+        if (code_ + 1u < NUM_RANKS) { ++code_; return true; }
         code_ = 0u;
         return false;
     }
@@ -222,7 +237,7 @@ public:
     // Optional: previous in this enumeration; false on wrap-around.
     [[nodiscard]] bool prev_permutation() {
         if (code_ > 0u) { --code_; return true; }
-        code_ = 719u;
+        code_ = static_cast<uint16_t>(NUM_RANKS - 1u);
         return false;
     }
 
@@ -236,7 +251,10 @@ public:
 
     // Decode rank in [0,1023] (only 0..719 are used) back to permutation (packed-15 + final-digit LUT).
     static std::array<uint8_t, 6> decode(uint16_t bits) {
-        bits = static_cast<uint16_t>(bits % 720u);
+        bits = static_cast<uint16_t>(bits % (NUM_RANKS + 1u));
+        if (bits == SENTINEL) {
+            return {0,1,2,3,4,5};
+        }
         std::array<uint8_t, 6> out{};
         const uint16_t b = packed15_table()[bits];
         out[0] = static_cast<uint8_t>( b        & 0x7u);
@@ -252,6 +270,7 @@ public:
 
     friend bool operator==(const Lehmer6& a, const Lehmer6& b) { return a.code_ == b.code_; }
     friend bool operator!=(const Lehmer6& a, const Lehmer6& b) { return !(a == b); }
+    friend bool operator==(const Lehmer6& a, uint16_t b) { return a.code_ == b; }
 
     // Composition: applies the left-hand permutation to the right-hand permutation.
     // Result r satisfies r[i] = lhs[rhs[i]] for i in 0..5.
@@ -274,4 +293,4 @@ public:
     }
 };
 
-static_assert((1u << 10) >= 720u, "Need at most 10 bits for 720 states.");
+static_assert((1u << 10) >= 721u, "Need at most 10 bits for 721 states (including sentinel).");

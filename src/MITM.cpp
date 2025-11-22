@@ -20,11 +20,11 @@ std::optional<SO6> generate_mitm_until_match(MITM& mitm) {
     LUT& right = mitm.right();
     SO6 meet{};
 
+    bool hit = false;
     for (int depth = 0; depth < 2*stored_depth_max; ++depth) {
         // Expand only the smaller frontier this iteration
         bool expand_left = left.current().size() <= right.current().size();
 
-        bool hit = false;
         LUT& active = expand_left ? left : right;
         LUT& passive = expand_left ? right : left;
         const char* label = expand_left ? "L" : "R";
@@ -40,6 +40,48 @@ std::optional<SO6> generate_mitm_until_match(MITM& mitm) {
     return std::nullopt;
 }
 
+MITMMatchResult generate_mitm_match(MITM& mitm) {
+    MITMMatchResult result;
+
+    auto meet_opt = generate_mitm_until_match(mitm);
+    if (!meet_opt) {
+        return result; // found stays false
+    }
+
+    result.found = true;
+    result.meet = *meet_opt;
+
+    // Recover paths from each root to the meeting element.
+    auto left_path_opt  = mitm.left().path_to(result.meet);
+    auto right_path_opt = mitm.right().path_to(result.meet);
+    if (left_path_opt && right_path_opt) {
+        result.left_path  = std::move(*left_path_opt);
+        result.right_path = std::move(*right_path_opt);
+        result.dl = static_cast<int>(result.left_path.size());
+        result.dr = static_cast<int>(result.right_path.size());
+    }
+
+    // Find canonical representatives of the meet in each LUT and derive a
+    // row/col/sign mapping between them.
+    auto left_it  = mitm.left().find(result.meet);
+    auto right_it = mitm.right().find(result.meet);
+    if (left_it != mitm.left().end() && right_it != mitm.right().end()) {
+        const SO6& lhs = *left_it;
+        const SO6& rhs = *right_it;
+        std::array<uint8_t,6> row_map{};
+        std::array<uint8_t,6> col_map{};
+        uint8_t sign_mask = 0;
+        if (reconcile_matrices(lhs, rhs, row_map, col_map, sign_mask)) {
+            result.row_map = row_map;
+            result.col_map = col_map;
+            result.sign_mask = sign_mask;
+            result.mapping_ok = true;
+        }
+    }
+
+    return result;
+}
+
 // Attempt to find the row/col/sign mapping to transform lhs into rhs exactly.
 // Returns true and fills mappings if successful.
 bool reconcile_matrices(const SO6& lhs, const SO6& rhs,
@@ -49,10 +91,10 @@ bool reconcile_matrices(const SO6& lhs, const SO6& rhs,
     auto decode = [](const Lehmer6& lh){
         return Lehmer6::decode_ref(lh.bits());
     };
-    const auto& rpL = decode(lhs.row_perm_lh_);
-    const auto& rpR = decode(rhs.row_perm_lh_);
-    const auto& cpL = decode(lhs.col_perm_lh_);
-    const auto& cpR = decode(rhs.col_perm_lh_);
+    const auto& rpL = decode(lhs.row_perm_lh());
+    const auto& rpR = decode(rhs.row_perm_lh());
+    const auto& cpL = decode(lhs.col_perm_lh());
+    const auto& cpR = decode(rhs.col_perm_lh());
 
     // inv perm for rhs
     auto invert = [](const std::array<uint8_t,6>& p){
@@ -72,15 +114,15 @@ bool reconcile_matrices(const SO6& lhs, const SO6& rhs,
     sign_mask_out = 0;
     for (size_t i=0;i<6;++i) {
         uint8_t lhs_row = row_map[i];
-        bool lhs_neg = ((lhs.sign_convention >> lhs_row) & 1u) != 0;
-        bool rhs_neg = ((rhs.sign_convention >> i) & 1u) != 0;
+        bool lhs_neg = ((lhs.sign_mask() >> lhs_row) & 1u) != 0;
+        bool rhs_neg = ((rhs.sign_mask() >> i) & 1u) != 0;
         if (lhs_neg != rhs_neg) sign_mask_out |= static_cast<uint8_t>(1u << i);
     }
 
     auto matches = [&](const std::array<uint8_t,6>& rm, const std::array<uint8_t,6>& cm, uint8_t sm)->bool{
         for (int r = 0; r < 6; ++r) {
             for (int c = 0; c < 6; ++c) {
-                Z2 val = lhs.get_element(rm[static_cast<size_t>(r)], cm[static_cast<size_t>(c)]);
+                DyadicSqrt2 val = lhs.get_element(rm[static_cast<size_t>(r)], cm[static_cast<size_t>(c)]);
                 if ( (sm >> r) & 1u ) val = -val;
                 if (val != rhs.get_element(r,c)) return false;
             }

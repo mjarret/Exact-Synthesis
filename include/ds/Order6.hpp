@@ -9,7 +9,6 @@
 #include <array>
 #include <cstdint>
 #include <bit>
-#include "util/assume.hpp"
 
 namespace order6 {
 
@@ -31,7 +30,6 @@ struct Order6 {
     static inline uint8_t select_kth(uint8_t mask, uint8_t k) {
         mask &= 0x3Fu;
         while (k--) mask &= (mask - 1);
-        ASSUME(mask != 0);
         return static_cast<uint8_t>(std::countr_zero(mask));
     }
 
@@ -39,8 +37,6 @@ struct Order6 {
     inline uint8_t mask() const { return static_cast<uint8_t>(bf.mask_bf & 0x3Fu); }
     inline uint16_t rank() const { return static_cast<uint16_t>(bf.rank_bf & 0x03FFu); }
     inline void set_mask_rank(uint8_t m, uint16_t r) {
-        ASSUME((m & ~0x3Fu) == 0);
-        ASSUME((r & ~0x03FFu) == 0);
         bf.mask_bf = static_cast<uint16_t>(m & 0x3Fu);
         bf.rank_bf = static_cast<uint16_t>(r & 0x03FFu);
     }
@@ -51,16 +47,14 @@ struct Order6 {
     // Encode from an array of size k with distinct values in 0..5
     static inline Order6 from_array(const uint8_t* a, uint8_t k) {
         Order6 o{};
-        ASSUME(k <= 6);
         // Build mask
         uint8_t m = 0;
-        for (uint8_t i = 0; i < k; ++i) { ASSUME(a[i] < 6); m |= static_cast<uint8_t>(1u << a[i]); }
+        for (uint8_t i = 0; i < k; ++i) { m |= static_cast<uint8_t>(1u << a[i]); }
         // Rank among permutations of the ascending-sorted selected values
         uint8_t rem = m;
         uint16_t r = 0;
         for (uint8_t i = 0; i < k; ++i) {
             uint8_t v = a[i];
-            ASSUME((rem & (1u << v)) != 0);
             // Count how many remaining values < v
             uint8_t less = static_cast<uint8_t>(
                 std::popcount(static_cast<unsigned>(rem & static_cast<uint8_t>((1u << v) - 1)))

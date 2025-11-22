@@ -29,7 +29,7 @@
 
     Notes:
       - The "driver" owns hash/col_hash/canonical_form book-keeping.
-      - Kernels only touch entries and may apply Z2-specific post-update normalization.
+      - Kernels only touch entries and may apply DyadicSqrt2-specific post-update normalization.
       - For correctness when sources overlap targets, kernels must READ BEFORE WRITE.
 
     Build:
@@ -78,13 +78,7 @@ template<class K, bool Canonicalize = true>
 inline __attribute__((always_inline))
 SO6& apply_inplace_row_kernel_opt(SO6& S, const K& k) {
     for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col);
-    if constexpr (Canonicalize) {
-        S.canonical_form();
-        S.recompute_hash();
-    } else {
-        // Keep hashes consistent with raw storage even without canonicalization
-        S.recompute_hash();
-    }
+    if constexpr (Canonicalize) {S.canonical_reset();}
     return S;
 }
 
@@ -168,7 +162,8 @@ public:
     }
 
 private:
-    static constexpr size_t StorageSize = 256;
+    // Increase SBO storage to accommodate larger kernels when using Dyadic backend
+    static constexpr size_t StorageSize = 512;
 
     alignas(std::max_align_t) unsigned char storage_[StorageSize];
     ApplyFn apply_;
@@ -181,8 +176,6 @@ private:
 // Runtime driver (type-erased)
 inline SO6& apply_inplace_any_kernel(SO6& S, const AnyKernel& k) {
     for (uint8_t col = 0; col < 6; ++col) k.transform_column(S, col);
-    S.canonical_form();
-    S.recompute_hash();
     return S;
 }
 
@@ -206,9 +199,9 @@ struct RowPairTKernel {
 
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
-        Z2 a = S.get_element(r1, col);
-        Z2 b = S.get_element(r2, col);
-        const Z2 a_old = a;
+        DyadicSqrt2 a = S.get_element(r1, col);
+        DyadicSqrt2 b = S.get_element(r2, col);
+        const DyadicSqrt2 a_old = a;
 
         a += b;
         b -= a_old;
@@ -226,7 +219,7 @@ struct RowPairTKernel {
 // 3b) Arbitrary 2x2 row-block
 struct RowPairLinear {
     uint8_t r1, r2;
-    Z2 m00, m01, m10, m11;
+    DyadicSqrt2 m00, m01, m10, m11;
 
     inline uint8_t rows_mask() const noexcept {
         return static_cast<uint8_t>((1u<<r1) | (1u<<r2));
@@ -234,13 +227,13 @@ struct RowPairLinear {
 
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
-        Z2 x0 = S.get_element(r1, col);
-        Z2 x1 = S.get_element(r2, col);
+        DyadicSqrt2 x0 = S.get_element(r1, col);
+        DyadicSqrt2 x1 = S.get_element(r2, col);
 
-        Z2 y0 = m00 * x0 + m01 * x1;
-        Z2 y1 = m10 * x0 + m11 * x1;
+        DyadicSqrt2 y0 = m00 * x0 + m01 * x1;
+        DyadicSqrt2 y1 = m10 * x0 + m11 * x1;
 
-        // Keep Z2's normalization policy
+        // Keep DyadicSqrt2's normalization policy
         y0.denom_exp += (y0.int_c != 0);
         y1.denom_exp += (y1.int_c != 0);
 
@@ -273,7 +266,7 @@ struct OptionalRowBlock {
 
     uint8_t rows[kMaxRows] = {kInactive, kInactive, kInactive, kInactive, kInactive, kInactive};
     // dense matrix; only active rows/cols participate
-    Z2 M[kMaxRows][kMaxRows] = {};
+    DyadicSqrt2 M[kMaxRows][kMaxRows] = {};
 
     inline uint8_t rows_mask() const noexcept {
         uint8_t mask = 0;
@@ -285,8 +278,8 @@ struct OptionalRowBlock {
 
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
-        Z2 x[kMaxRows] = {};
-        Z2 y[kMaxRows] = {};
+        DyadicSqrt2 x[kMaxRows] = {};
+        DyadicSqrt2 y[kMaxRows] = {};
         uint8_t active[kMaxRows];
         int n = 0;
 
@@ -319,7 +312,7 @@ template<int K>
 struct RowBlockLinear {
     static_assert(K >= 1 && K <= 6, "RowBlockLinear<K>: K must be in [1,6]");
     std::array<uint8_t, K> rows; // rows we touch (0..5)
-    Z2 M[K][K];                  // KxK coefficients
+    DyadicSqrt2 M[K][K];                  // KxK coefficients
 
     inline uint8_t rows_mask() const noexcept {
         return detail::bitmask_from_rows<K>(rows);
@@ -327,10 +320,10 @@ struct RowBlockLinear {
 
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
-        Z2 x[K];
+        DyadicSqrt2 x[K];
         for (int i = 0; i < K; ++i) x[i] = S.get_element(rows[i], col);
 
-        Z2 y[K] = {};
+        DyadicSqrt2 y[K] = {};
         for (int i = 0; i < K; ++i) {
             for (int j = 0; j < K; ++j) {
                 y[i] += M[i][j] * x[j];
@@ -355,7 +348,7 @@ struct CSRLeftOp {
     // row_ptr size = num_targets + 1
     std::array<uint8_t, 7>  row_ptr{};     // monotone, row_ptr[0]=0, row_ptr[num_targets]=nnz
     std::array<uint8_t, 36> col_idx{};     // indices of source rows (0..5)
-    std::array<Z2,     36>  val{};         // coefficients
+    std::array<DyadicSqrt2,     36>  val{};         // coefficients
 
     inline uint8_t rows_mask() const noexcept {
         return detail::bitmask_from_rows(targets.data(), num_targets);
@@ -364,12 +357,12 @@ struct CSRLeftOp {
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
         // Read all possible sources once
-        Z2 src[6];
+        DyadicSqrt2 src[6];
         for (int r = 0; r < 6; ++r) src[r] = S.get_element(static_cast<uint8_t>(r), col);
 
         for (uint8_t t = 0; t < num_targets; ++t) {
             uint8_t i = targets[t];
-            Z2 acc{}; // zero
+            DyadicSqrt2 acc{}; // zero
             for (uint8_t p = row_ptr[t]; p < row_ptr[t+1]; ++p) {
                 acc += val[p] * src[col_idx[p]];
             }
@@ -456,8 +449,6 @@ public:
                 ops_[i].transform_column(S, col);
             }
         }
-        S.canonical_form();        
-        S.recompute_hash();
         return S;
     }
 
@@ -486,9 +477,9 @@ struct TKernelCT {
 
     inline __attribute__((always_inline))
     void transform_column(SO6& S, uint8_t col) const {
-        Z2 a = S.get_element(static_cast<uint8_t>(Row1), col);
-        Z2 b = S.get_element(static_cast<uint8_t>(Row2), col);
-        const Z2 a_old = a;
+        DyadicSqrt2 a = S.get_element(static_cast<uint8_t>(Row1), col);
+        DyadicSqrt2 b = S.get_element(static_cast<uint8_t>(Row2), col);
+        const DyadicSqrt2 a_old = a;
 
         a += b;
         b -= a_old;
@@ -543,12 +534,12 @@ inline constexpr uint8_t pair_index(uint8_t r1, uint8_t r2) {
 
 // Build RowPairLinear equivalent to your T (for runtime rows)
 inline RowPairLinear make_T_rowpair(uint8_t r1, uint8_t r2) {
-    // Algebraically: [a'; b'] = [[1,1],[1,-1]] * [a; b], plus the same Z2 post-normalization
+    // Algebraically: [a'; b'] = [[1,1],[1,-1]] * [a; b], plus the same DyadicSqrt2 post-normalization
     RowPairLinear k;
     k.r1 = r1; k.r2 = r2;
-    k.m00 = Z2{1}; k.m01 = Z2{1};
-    k.m10 = Z2{1};
-    k.m11 = Z2(static_cast<uint8_t>(-1), static_cast<uint8_t>(0), static_cast<uint8_t>(0));
+    k.m00 = DyadicSqrt2{1}; k.m01 = DyadicSqrt2{1};
+    k.m10 = DyadicSqrt2{1};
+    k.m11 = DyadicSqrt2(static_cast<uint8_t>(-1), static_cast<uint8_t>(0), static_cast<uint8_t>(0));
     return k;
 }
 
@@ -578,7 +569,7 @@ inline CSRLeftOp make_csr_leftop(const SO6& L) {
     uint8_t nnz = 0;
     for (uint8_t i = 0; i < 6; ++i) {
         for (uint8_t j = 0; j < 6; ++j) {
-            Z2 v = L.get_element(i, j);
+            DyadicSqrt2 v = L.get_element(i, j);
             if (v.int_c == 0) continue;
             op.col_idx[nnz] = j;
             op.val[nnz]     = v;

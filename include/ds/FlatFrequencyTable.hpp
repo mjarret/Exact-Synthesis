@@ -127,85 +127,7 @@ public:
         return true;
     }
 
-#ifdef DS_ENUM_CYCLE
-    // ----- OP6-style full-cycle caching (per exact mask vector) -----
-    struct Cycle {
-        std::vector<std::array<uint8_t,6>> perms; // length = product(k!)
-    };
-    static inline std::unordered_map<uint64_t, Cycle>& cycle_cache() {
-        static std::unordered_map<uint64_t, Cycle> c; return c;
-    }
-
-    // Key by masks in signature-sorted block order: low 8 bits = nb, then 8-bit mask per block
-    uint64_t cycle_key() const {
-        const uint8_t nb = static_cast<uint8_t>(n_);
-        uint64_t key = nb;
-        // Build stable order by ascending signature (Entry.first)
-        uint8_t idx[6]; for (uint8_t i = 0; i < nb; ++i) idx[i] = i;
-        std::sort(idx, idx + nb, [&](uint8_t a, uint8_t b){ return entries_[a].first < entries_[b].first; });
-        for (uint8_t i = 0; i < nb; ++i) {
-            const uint8_t m = entries_[idx[i]].second.mask();
-            key |= (static_cast<uint64_t>(m) & 0xFFull) << (8 * (i + 1));
-        }
-        return key;
-    }
-
-    void prepare_cycle() {
-        if (cycle_ != nullptr) return;
-        auto &cache = cycle_cache();
-        uint64_t key = cycle_key();
-        auto it = cache.find(key);
-        if (it == cache.end()) {
-            Cycle cyc;
-            // compute per-block counts and total in signature-sorted order
-            uint8_t nb = static_cast<uint8_t>(n_);
-            uint8_t idx[6]; for (uint8_t i = 0; i < nb; ++i) idx[i] = i;
-            std::sort(idx, idx + nb, [&](uint8_t a, uint8_t b){ return entries_[a].first < entries_[b].first; });
-            uint16_t counts[6]{}; uint32_t total = 1;
-            uint8_t masks[6]{};
-            for (uint8_t i = 0; i < nb; ++i) {
-                const auto &e = entries_[idx[i]];
-                const uint8_t k = e.second.size();
-                masks[i] = e.second.mask();
-                counts[i] = order6::FACT[k];
-                total *= counts[i];
-            }
-            cyc.perms.reserve(total);
-            // mixed-radix over ranks and decode blocks in that order
-            for (uint32_t mr = 0; mr < total; ++mr) {
-                uint32_t x = mr; uint16_t rnk[6]{};
-                for (uint8_t b = 0; b < nb; ++b) { const uint16_t cnt = counts[b]; rnk[b] = static_cast<uint16_t>(x % cnt); x /= cnt; }
-                std::array<uint8_t,6> p{}; uint8_t* w = p.data();
-                uint8_t tmp[6];
-                for (uint8_t b = 0; b < nb; ++b) {
-                    order6::Order6 o{}; o.set_mask_rank(masks[b], rnk[b]);
-                    o.to_array(tmp);
-                    const uint8_t k = o.size();
-                    for (uint8_t j = 0; j < k; ++j) *w++ = tmp[j];
-                }
-                cyc.perms.push_back(p);
-            }
-            it = cache.emplace(key, std::move(cyc)).first;
-        }
-        cycle_ = &it->second;
-        cycle_pos_ = 0;
-    }
-
-    // Copy current permutation to out (length 6)
-    void fill_current_perm(uint8_t* out) {
-        if (cycle_ == nullptr) prepare_cycle();
-        std::memcpy(out, cycle_->perms[cycle_pos_].data(), 6);
-    }
-
-    // Advance to next in cycle; false on wrap and reset to beginning
-    bool next_via_cycle() {
-        if (cycle_ == nullptr) prepare_cycle();
-        const uint32_t len = static_cast<uint32_t>(cycle_->perms.size());
-        if (len == 0) return false;
-        if (cycle_pos_ + 1u < len) { ++cycle_pos_; return true; }
-        cycle_pos_ = 0; return false;
-    }
-#endif // DS_ENUM_CYCLE
+    // (OP6-style full-cycle caching removed)
 
 private:
     Entry entries_[6]{};
@@ -219,10 +141,7 @@ private:
     }
     const LUT* lut_{nullptr};
     uint16_t lut_pos_{0};
-#ifdef DS_ENUM_CYCLE
-    const Cycle* cycle_{nullptr};
-    uint32_t cycle_pos_{0};
-#endif
+    // (cycle_* fields removed)
 };
 
 } // namespace ds

@@ -28,10 +28,10 @@ int main(int argc, char** argv) {
         std::cout << "\nCanonical view (perms/sign):\n";
         s.print_with_perms(std::cout);
         std::cout << "\nrow_perm=";
-        for (auto v : Lehmer6::decode_ref(s.row_perm_lh_.bits())) std::cout << int(v) << ' ';
+        for (auto v : Lehmer6::decode_ref(s.row_perm_lh().bits())) std::cout << int(v) << ' ';
         std::cout << "\ncol_perm=";
-        for (auto v : Lehmer6::decode_ref(s.col_perm_lh_.bits())) std::cout << int(v) << ' ';
-        std::cout << "\nsign_mask=0b" << std::bitset<6>(s.sign_convention) << "\n\n";
+        for (auto v : Lehmer6::decode_ref(s.col_perm_lh().bits())) std::cout << int(v) << ' ';
+        std::cout << "\nsign_mask=0b" << std::bitset<6>(s.sign_mask()) << "\n\n";
     }
     return 0;
 }

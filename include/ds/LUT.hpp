@@ -23,7 +23,7 @@ using working_set = tbb::concurrent_unordered_set<SO6>;
 // This changes only bucket placement inside the robin_hood set; it does not affect std::hash<SO6>
 struct FinalizedHash32 {
     uint16_t operator()(const SO6& s) const noexcept {
-        return s.hash;
+        return s.primary_hash();
     }
 };
 
@@ -44,6 +44,10 @@ public:
     class ElementIterator;
 
     LUT(const SO6& root = SO6::identity()) {
+        // Reserve a reasonable number of layers up front to avoid small
+        // reallocations as we grow; stored_depth_max is a global upper bound.
+        extern uint8_t stored_depth_max;
+        lookupTable.reserve(static_cast<size_t>(stored_depth_max) + 1u);
         lookupTable.push_back(finalized_set{});
         lookupTable.back().insert(root);
     };
@@ -212,141 +216,6 @@ public:
     ElementIterator end() const { return ElementIterator(&lookupTable, lookupTable.size()); }
 
 
-    // -------- BFS raw extensions (no record keeping; compute-on-deref) --------
-    // Iterates depth = 1..max_depth. For each leaf and each base-14 code in [0,14^depth),
-    // maps code digits to T indices while skipping the forbidden digit (first digit forbids
-    // leaf.last_T; subsequent digits forbid the previous chosen T). Each deref computes the
-    // SO6 by applying the decoded T-sequence to the leaf. No vectors/push_backs are used.
-    struct BFSExtensionRawRange {
-        const finalized_set* leaves;
-        int max_depth;
-
-        struct iterator {
-            using iterator_category = std::forward_iterator_tag;
-            using value_type = SO6;
-            using difference_type = std::ptrdiff_t;
-            using pointer = const SO6*;
-            using reference = const SO6&;
-
-            iterator() : leaves_(nullptr), max_depth_(0), at_end_(true) {}
-
-            iterator(const finalized_set* leaves, int max_depth, bool begin)
-                : leaves_(leaves), max_depth_(max_depth), at_end_(!begin)
-            {
-                if (!begin || !leaves_ || leaves_->empty() || max_depth_ <= 0) { at_end_ = true; return; }
-                depth_ = 1;
-                leaf_it_ = leaves_->begin();
-                leaf_end_ = leaves_->end();
-                code_ = 0;
-                count_ = pow14(depth_);
-            }
-
-            // Compute-on-deref: decode base-14 code skipping the forbidden digit
-            value_type operator*() const {
-                SO6 cur = *leaf_it_;
-                uint8_t forbid = cur.last_T;
-                std::size_t x = code_;
-                for (int i = 0; i < depth_; ++i) {
-                    uint8_t d = static_cast<uint8_t>(x % 14u);
-                    x /= 14u;
-                    uint8_t t = static_cast<uint8_t>(d + (d >= forbid ? 1 : 0));
-                    cur = T_OperatorRuntime(t) * cur;
-                    forbid = t;
-                }
-                return cur;
-            }
-
-            iterator& operator++() {
-                if (at_end_) return *this;
-                // Next code for this leaf/depth
-                ++code_;
-                if (code_ < count_) return *this;
-                // Next leaf
-                code_ = 0;
-                ++leaf_it_;
-                if (leaf_it_ != leaf_end_) return *this;
-                // Next depth
-                ++depth_;
-                if (depth_ > max_depth_) { at_end_ = true; return *this; }
-                leaf_it_ = leaves_->begin();
-                count_ = pow14(depth_);
-                return *this;
-            }
-
-            bool operator==(const iterator& other) const {
-                if (at_end_ && other.at_end_) return true;
-                return leaves_ == other.leaves_ && at_end_ == other.at_end_
-                       && (at_end_ || (leaf_it_ == other.leaf_it_ && depth_ == other.depth_ && code_ == other.code_));
-            }
-            bool operator!=(const iterator& other) const { return !(*this == other); }
-
-        private:
-            static inline std::size_t pow14(int d) {
-                std::size_t p = 1;
-                for (int i = 0; i < d; ++i) p *= 14u;
-                return p;
-            }
-
-            const finalized_set* leaves_;
-            finalized_set::const_iterator leaf_it_;
-            finalized_set::const_iterator leaf_end_;
-            int max_depth_;
-            int depth_{0};
-            bool at_end_{true};
-            std::size_t code_{0};
-            std::size_t count_{0};
-        };
-
-        iterator begin() const { return iterator(leaves, max_depth, true); }
-        iterator end()   const { return iterator(); }
-    };
-
-    BFSExtensionRawRange raw_bfs_extensions(int max_depth) const { return BFSExtensionRawRange{ &lookupTable.back(), max_depth }; }
-
-    /**
-     * @brief Brute-force depth-first extension matcher over the last layer (leaves).
-     *
-     * For each leaf S in the last finalized layer, enumerate all sequences of T
-     * moves of length 1..max_depth, where at each step the T index differs from
-     * the previous step's last_T (and for the first step, from S.last_T).
-     *
-     * Does not insert any generated states into the LUT. Instead, for each
-     * generated state, compares it to `target`. Returns the first matching
-     * sequence of T indices if found. If `from_leaf_out` is non-null, writes the
-     * starting leaf S that yielded the match.
-     */
-    std::optional<std::vector<uint8_t>> match_by_dfs_extension(const SO6& target,
-                                                               int max_depth,
-                                                               SO6* from_leaf_out = nullptr) const {
-        if (lookupTable.empty() || max_depth <= 0) return std::nullopt;
-
-        const auto& leaves = lookupTable.back();
-
-        // Local recursive lambda for DFS from a given node
-        std::function<bool(const SO6&, int, uint8_t, std::vector<uint8_t>&)> dfs;
-        dfs = [&](const SO6& cur, int remaining, uint8_t forbid_t, std::vector<uint8_t>& seq) -> bool {
-            // Try all T indices except the forbidden one
-            for (uint8_t t = 0; t < 15; ++t) {
-                if (t == forbid_t) continue;
-                SO6 next = T_OperatorRuntime(t) * cur; // copy; updates last_T inside next
-                seq.push_back(t);
-                if (next == target) return true;                     // match at this depth
-                if (remaining > 1 && dfs(next, remaining - 1, t, seq)) return true; // deeper
-                seq.pop_back();
-            }
-            return false;
-        };
-
-        for (const auto& leaf : leaves) {
-            std::vector<uint8_t> seq;
-            if (dfs(leaf, max_depth, leaf.last_T, seq)) {
-                if (from_leaf_out) *from_leaf_out = leaf;
-                return seq;
-            }
-        }
-        return std::nullopt;
-    }
-
     /**
      * @brief Recover the T-sequence from the root to a target element already stored in the LUT.
      *
@@ -376,7 +245,20 @@ public:
             uint8_t t = current.last_T;
             path.push_back(t);
             const auto& prev = lookupTable[static_cast<size_t>(l - 1)];
-            current = *prev.find(T_OperatorRuntime(t) * current);
+            // Find a parent p in the previous layer such that T(t) * p == current.
+            // We do a linear scan here; this is only used for path reconstruction
+            // in diagnostics/benchmarks, not in the main search.
+            bool found_parent = false;
+            for (const auto& cand : prev) {
+                if (T_OperatorRuntime(t) * cand == current) {
+                    current = cand;
+                    found_parent = true;
+                    break;
+                }
+            }
+            if (!found_parent) {
+                return std::nullopt;
+            }
         }
 
         std::reverse(path.begin(), path.end());
@@ -385,28 +267,6 @@ public:
 
     SO6 root() const {
         return *lookupTable.front().begin();
-    }
-
-    /**
-     * @brief Convenience printer for a recovered path.
-     * TODO: Replace std::cout with your preferred logging sink.
-     */
-    void print_path(const SO6& target, std::ostream& os = std::cout) const {
-        auto p = path_to(target);
-        if (!p) {
-            os << "[path] not found or inconsistent for target\n";
-            return;
-        }
-        if (p->empty()) {
-            os << "[path] target is the root\n";
-            return;
-        }
-        os << "[path] length " << p->size() << ": ";
-        for (size_t i = 0; i < p->size(); ++i) {
-            if (i) os << " -> ";
-            os << "T" << static_cast<int>((*p)[i]);
-        }
-        os << "\n";
     }
 
 private:
