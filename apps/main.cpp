@@ -10,6 +10,7 @@
 #include <tbb/parallel_for_each.h>
 #include <iomanip>
 #include <fstream>
+#include <exception>
 #include <cstdlib>
 #include <csignal>
 #include <chrono>
@@ -17,6 +18,7 @@
 #include "so6/SO6.hpp"
 #include "ds/LUT.hpp" // Rooted SO6 BFS/LUT
 #include "util/io_utils.hpp"
+#include "util/lut_export.hpp"
 #include "algo/Generate.hpp"
 #include <string>
 #include <thread>
@@ -127,7 +129,17 @@ int main(int argc, char **argv)
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
     LUT gen_set = algo::create_lookup_table(SO6::identity(), nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
-    algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
+    // algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
+
+    try {
+        auto export_summary = lut_export::write_lut_database(gen_set);
+        double mib = static_cast<double>(export_summary.bytes_written) / (1024.0 * 1024.0);
+        std::cout << "LUT export wrote " << export_summary.records << " SO6 entries to "
+                  << export_summary.path << " (" << std::fixed << std::setprecision(2)
+                  << mib << " MiB across " << export_summary.bucket_count << " buckets)\n";
+    } catch (const std::exception& ex) {
+        std::cerr << "LUT export failed: " << ex.what() << "\n";
+    }
 
     indicators::show_console_cursor(true);
 

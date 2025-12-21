@@ -10,15 +10,6 @@ constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
 
 namespace {
-    // Load 24-bit packed DyadicSqrt2 from column base and row index (column-major, 3 bytes per entry)
-    static inline __attribute__((always_inline)) DyadicSqrt2 load_DyadicSqrt2_from_col_row(const uint8_t* base_col, uint8_t row) {
-        const uint8_t* p = base_col + static_cast<int>(row) * 3;
-        uint32_t v = static_cast<uint32_t>(p[0])
-                   | (static_cast<uint32_t>(p[1]) << 8)
-                   | (static_cast<uint32_t>(p[2]) << 16);
-        return DyadicSqrt2(v);
-    }
-
     // Compare a single column under row/col permutations and sign masks
     static inline __attribute__((always_inline)) std::strong_ordering cmp_col_fast(
         const SO6& s,
@@ -29,8 +20,6 @@ namespace {
     {
         const int cL = colL ? colL[col_idx] : col_idx;
         const int cR = colR ? colR[col_idx] : col_idx;
-        const uint8_t* baseL = s.arr24_ + cL * 18; // 6 rows * 3 bytes
-        const uint8_t* baseR = s.arr24_ + cR * 18;
 
         int i = 0;
         std::strong_ordering comp1 = Equal;
@@ -38,8 +27,10 @@ namespace {
 
         // Phase 1: find orientation (first non-zero)
         for (; i < 6; ++i) {
-            const DyadicSqrt2 L = load_DyadicSqrt2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
-            const DyadicSqrt2 R = load_DyadicSqrt2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 L = s.get_element(rowL ? rowL[i] : static_cast<uint8_t>(i),
+                                                static_cast<uint8_t>(cL));
+            const DyadicSqrt2 R = s.get_element(rowR ? rowR[i] : static_cast<uint8_t>(i),
+                                                static_cast<uint8_t>(cR));
             comp1 = L.int_c <=> 0;
             comp2 = R.int_c <=> 0;
             if (comp1 == Equal && comp2 == Equal) continue;
@@ -54,8 +45,10 @@ namespace {
 
         // Phase 2: lex compare with sign masks
         for (; i < 6; ++i) {
-            const DyadicSqrt2 L = load_DyadicSqrt2_from_col_row(baseL, rowL ? rowL[i] : static_cast<uint8_t>(i));
-            const DyadicSqrt2 R = load_DyadicSqrt2_from_col_row(baseR, rowR ? rowR[i] : static_cast<uint8_t>(i));
+            const DyadicSqrt2 L = s.get_element(rowL ? rowL[i] : static_cast<uint8_t>(i),
+                                                static_cast<uint8_t>(cL));
+            const DyadicSqrt2 R = s.get_element(rowR ? rowR[i] : static_cast<uint8_t>(i),
+                                                static_cast<uint8_t>(cR));
             const bool first_is_neg  = (((first_sign_mask  >> i) & utils::BITS) == utils::NEG);
             const bool second_is_neg = (((second_sign_mask >> i) & utils::BITS) == utils::NEG);
             const std::strong_ordering cmp = (second_is_neg ? -R : R) <=> (first_is_neg ? -L : L);
@@ -74,7 +67,7 @@ namespace {
  */
 SO6::SO6()
 {
-    // Packed buffer already zero-initialized via in-class initializer in header for arr24_.
+    // Storage already zero-initialized via in-class initializer.
 }
 
 // SO6Lite conversions removed in this build

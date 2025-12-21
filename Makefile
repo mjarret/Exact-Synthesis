@@ -82,7 +82,7 @@ ifeq ($(LINKER),lld)
 endif
 
 # Source Files
-SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp
+SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp src/util/lut_export.cpp
 OBJ := $(SRC:.cpp=.o)
 
 # Standalone app object files (built on demand)

@@ -32,7 +32,15 @@
 #SBATCH --constraint=intel
 
 ## Load the relevant modules needed for the job
-module load python 
+module purge
+module load hosts/hopper ohpc
+module load compiler/gnu/10.3.0
+module load oneapi-hpc/2024.2.1
+
+# BUILD THE PROGRAM
+cd /scratch/mjarretb/compile
+make clean
+make COMPILER=gcc -j "${SLURM_CPUS_PER_TASK:-1}"
 
 ## Run your program or script
-python /scratch/mjarretb/compile/experiments.py
+srun /scratch/mjarretb/compile/main.out -t 12 -no-indicators

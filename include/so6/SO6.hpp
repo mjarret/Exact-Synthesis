@@ -32,6 +32,7 @@
 #include "ds/SmallFreqMap.hpp"
 #include "ds/Lehmer6.hpp"
 #include "ds/Order6.hpp"
+#include "ds/Clifford6.hpp"
 
 // Flat, stack-only table specialized for tiny n=6
 #include "ds/FlatFrequencyTable.hpp"
@@ -72,7 +73,8 @@ private:
 public:
         // ---------- Storage ----------
         /// Flat column-major storage: index = col*6 + row
-        uint8_t arr24_[36 * 3]{};     // packed 24-bit DyadicSqrt2
+        // uint8_t arr24_[36 * 3]{};     // previous packed 24-bit DyadicSqrt2
+        std::array<DyadicSqrt2, 36> arr_{};   // direct Dyadic storage
 
         /// Misc packed flags used during search/canonicalization
         union {
@@ -106,19 +108,11 @@ public:
 
         /// Read element (by value) from packed storage.
         inline DyadicSqrt2 get_element(const uint8_t row, const uint8_t col) const {
-            int off = get_index(row, col) * 3;
-            uint32_t v = arr24_[off]
-                       | (uint32_t(arr24_[off + 1]) << 8)
-                       | (uint32_t(arr24_[off + 2]) << 16);
-            return DyadicSqrt2(v);
+            return arr_[get_index(row, col)];
         }
         /// Write element into packed storage (stores lower 24 bits of z.data).
         inline void set_element(const uint8_t row, const uint8_t col, const DyadicSqrt2& z) {
-            int off = get_index(row, col) * 3;
-            uint32_t v = (z.data & 0xFFFFFFu);
-            arr24_[off]     = v & 0xFFu;
-            arr24_[off + 1] = (v >> 8) & 0xFFu;
-            arr24_[off + 2] = (v >> 16) & 0xFFu;
+            arr_[get_index(row, col)] = z;
             // Mark cached hashes as invalid; they will be recomputed lazily.
             hash = 0;
             col_hash = 0;

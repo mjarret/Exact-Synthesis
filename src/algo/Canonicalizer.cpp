@@ -34,69 +34,29 @@ namespace {
     // Local alias to make the storage type for permutations easy to swap later
     using PermBuffer = std::array<uint8_t, 6>;
 
-    // Load a packed 24-bit element from column base and row (3 bytes per entry)
-    inline __attribute__((always_inline)) uint32_t load24(const uint8_t* base_col, uint8_t row) {
-        const uint8_t* p = base_col + static_cast<int>(row) * 3;
-        return static_cast<uint32_t>(p[0])
-             | (static_cast<uint32_t>(p[1]) << 8)
-             | (static_cast<uint32_t>(p[2]) << 16);
-    }
-
-    // Raw lexicographic order for two columns within the same matrix under a single sign mask.
-    // Returns the same strong_ordering semantics as utils::lex_order (comparison of right vs left).
+    // Strong-order columns within the same matrix under a single sign mask,
+    // using the existing lex_order helper (no packed-byte dependency).
     inline __attribute__((always_inline)) strong_ordering lex_order_col_rowonly_raw(
         const SO6& s, const uint8_t* row_a, int colL, int colR, uint16_t sign_mask)
     {
-        const uint8_t* baseL = s.arr24_ + static_cast<int>(colL) * 18;
-        const uint8_t* baseR = s.arr24_ + static_cast<int>(colR) * 18;
-        uint16_t smL = sign_mask;
-        uint16_t smR = sign_mask;
+        struct ColIter {
+            const SO6* s;
+            const uint8_t* row;
+            int col;
+            int i;
+            DyadicSqrt2 operator*() const {
+                const int r = row ? row[i] : i;
+                return s->get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(col));
+            }
+            ColIter& operator++() { ++i; return *this; }
+            bool operator!=(const ColIter& other) const { return i != other.i; }
+        };
 
-        int i = 0;
-        strong_ordering comp1 = Equal;
-        strong_ordering comp2 = Equal;
-
-        // Phase 1: find orientation
-        for (; i < 6; ++i) {
-            const uint32_t Ld = load24(baseL, row_a[i]);
-            const uint32_t Rd = load24(baseR, row_a[i]);
-            const int8_t Lic = static_cast<int8_t>(Ld & 0xFF);
-            const int8_t Ric = static_cast<int8_t>(Rd & 0xFF);
-            comp1 = (Lic < 0) ? Less : (Lic > 0 ? Greater : Equal);
-            comp2 = (Ric < 0) ? Less : (Ric > 0 ? Greater : Equal);
-            if (comp1 == Equal && comp2 == Equal) continue;
-            if (comp1 == Equal) return Greater;
-            if (comp2 == Equal) return Less;
-            const uint8_t fsm = static_cast<uint8_t>((smL >> i) & utils::BITS);
-            const uint8_t ssm = static_cast<uint8_t>((smR >> i) & utils::BITS);
-            if ((comp1 == Less) ^ (fsm == utils::NEG)) smL ^= 0x3Fu;
-            if ((comp2 == Less) ^ (ssm == utils::NEG)) smR ^= 0x3Fu;
-            break;
-        }
-
-        // Phase 2: compare with signs applied
-        for (; i < 6; ++i) {
-            const uint32_t Ld = load24(baseL, row_a[i]);
-            const uint32_t Rd = load24(baseR, row_a[i]);
-            const uint16_t Lnum = static_cast<uint16_t>(Ld & 0xFFFFu);
-            const uint16_t Rnum = static_cast<uint16_t>(Rd & 0xFFFFu);
-            const bool first_is_neg  = (((smL >> i) & utils::BITS) == utils::NEG);
-            const bool second_is_neg = (((smR >> i) & utils::BITS) == utils::NEG);
-
-            const uint16_t Lnum_eff = first_is_neg  ? static_cast<uint16_t>((Lnum != 0) ? (256u - Lnum) : 0u) : Lnum;
-            const uint16_t Rnum_eff = second_is_neg ? static_cast<uint16_t>((Rnum != 0) ? (256u - Rnum) : 0u) : Rnum;
-            const uint32_t Leff = (Ld & 0xFF0000u) | Lnum_eff;
-            const uint32_t Reff = (Rd & 0xFF0000u) | Rnum_eff;
-
-            const uint32_t Lval = (static_cast<uint8_t>(Lnum_eff & 0xFFu) != 0) ? Leff : 0u;
-            const uint32_t Rval = (static_cast<uint8_t>(Rnum_eff & 0xFFu) != 0) ? Reff : 0u;
-
-            if (Rval == Lval) continue;
-            if (static_cast<int8_t>(Lnum & 0xFFu) == 0) return Greater;
-            if (static_cast<int8_t>(Rnum & 0xFFu) == 0) return Less;
-            return (Rval < Lval) ? Less : Greater;
-        }
-        return Equal;
+        ColIter a_begin{&s, row_a, colL, 0};
+        ColIter a_end  {&s, row_a, colL, 6};
+        ColIter b_begin{&s, row_a, colR, 0};
+        ColIter b_end  {&s, row_a, colR, 6};
+        return utils::lex_order(a_begin, a_end, b_begin, b_end, sign_mask, sign_mask);
     }
 
     // Contiguous view overload: forward to pointer fast-path
@@ -106,65 +66,14 @@ namespace {
         return lex_order_col_rowonly_raw(s, row.data(), colL, colR, sign_mask);
     }
 
-    // Generic overload accepting any PermutationLike6. This preserves the
-    // existing pointer-based fast path by providing a separate template
-    // overload rather than changing call sites. When the caller provides a
-    // non-pointer permutation object (e.g., std::array or a custom type),
-    // this overload will be selected and index into it directly.
+    // Generic overload accepting any PermutationLike6.
     template <PermutationLike6 Row>
     inline __attribute__((always_inline)) strong_ordering lex_order_col_rowonly_raw(
         const SO6& s, const Row& row, int colL, int colR, uint16_t sign_mask)
     {
-        const uint8_t* baseL = s.arr24_ + static_cast<int>(colL) * 18;
-        const uint8_t* baseR = s.arr24_ + static_cast<int>(colR) * 18;
-        uint16_t smL = sign_mask;
-        uint16_t smR = sign_mask;
-
-        int i = 0;
-        strong_ordering comp1 = Equal;
-        strong_ordering comp2 = Equal;
-
-        // Phase 1: find orientation
-        for (; i < 6; ++i) {
-            const uint32_t Ld = load24(baseL, static_cast<uint8_t>(row[static_cast<size_t>(i)]));
-            const uint32_t Rd = load24(baseR, static_cast<uint8_t>(row[static_cast<size_t>(i)]));
-            const int8_t Lic = static_cast<int8_t>(Ld & 0xFF);
-            const int8_t Ric = static_cast<int8_t>(Rd & 0xFF);
-            comp1 = (Lic < 0) ? Less : (Lic > 0 ? Greater : Equal);
-            comp2 = (Ric < 0) ? Less : (Ric > 0 ? Greater : Equal);
-            if (comp1 == Equal && comp2 == Equal) continue;
-            if (comp1 == Equal) return Greater;
-            if (comp2 == Equal) return Less;
-            const uint8_t fsm = static_cast<uint8_t>((smL >> i) & utils::BITS);
-            const uint8_t ssm = static_cast<uint8_t>((smR >> i) & utils::BITS);
-            if ((comp1 == Less) ^ (fsm == utils::NEG)) smL ^= 0x3Fu;
-            if ((comp2 == Less) ^ (ssm == utils::NEG)) smR ^= 0x3Fu;
-            break;
-        }
-
-        // Phase 2: compare with signs applied
-        for (; i < 6; ++i) {
-            const uint32_t Ld = load24(baseL, static_cast<uint8_t>(row[static_cast<size_t>(i)]));
-            const uint32_t Rd = load24(baseR, static_cast<uint8_t>(row[static_cast<size_t>(i)]));
-            const uint16_t Lnum = static_cast<uint16_t>(Ld & 0xFFFFu);
-            const uint16_t Rnum = static_cast<uint16_t>(Rd & 0xFFFFu);
-            const bool first_is_neg  = (((smL >> i) & utils::BITS) == utils::NEG);
-            const bool second_is_neg = (((smR >> i) & utils::BITS) == utils::NEG);
-
-            const uint16_t Lnum_eff = first_is_neg  ? static_cast<uint16_t>((Lnum != 0) ? (256u - Lnum) : 0u) : Lnum;
-            const uint16_t Rnum_eff = second_is_neg ? static_cast<uint16_t>((Rnum != 0) ? (256u - Rnum) : 0u) : Rnum;
-            const uint32_t Leff = (Ld & 0xFF0000u) | Lnum_eff;
-            const uint32_t Reff = (Rd & 0xFF0000u) | Rnum_eff;
-
-            const uint32_t Lval = (static_cast<uint8_t>(Lnum_eff & 0xFFu) != 0) ? Leff : 0u;
-            const uint32_t Rval = (static_cast<uint8_t>(Rnum_eff & 0xFFu) != 0) ? Reff : 0u;
-
-            if (Rval == Lval) continue;
-            if (static_cast<int8_t>(Lnum & 0xFFu) == 0) return Greater;
-            if (static_cast<int8_t>(Rnum & 0xFFu) == 0) return Less;
-            return (Rval < Lval) ? Less : Greater;
-        }
-        return Equal;
+        uint8_t buf[6];
+        for (int i = 0; i < 6; ++i) buf[i] = static_cast<uint8_t>(row[static_cast<std::size_t>(i)]);
+        return lex_order_col_rowonly_raw(s, buf, colL, colR, sign_mask);
     }
 
     struct PermView {
@@ -253,84 +162,6 @@ namespace {
         }
         return false;
     }
-    struct Blocks {
-        struct Block {
-            uint8_t mask{0};
-            uint8_t size{0};
-            order6::Order6 order{};   // current rank within this block
-            uint8_t idx[6]{};         // ascending indices for this block
-        };
-        Block blocks[6]{};
-        uint8_t count{0};
-
-        // Build from a SignatureMaskMap sorted by signature (deterministic block order)
-        void init_from_map(const ds::SignatureMaskMap& m) {
-            count = static_cast<uint8_t>(m.size());
-            for (uint8_t i = 0; i < count; ++i) {
-                const auto &e = m[i];
-                blocks[i].mask = e.mask;
-                // extract indices in ascending order into idx
-                uint8_t k = 0;
-                for (uint8_t b = 0; b < 6; ++b) {
-                    if (e.mask & (1u << b)) blocks[i].idx[k++] = b;
-                }
-                blocks[i].size = k;
-                blocks[i].order = order6::Order6::from_array(blocks[i].idx, k); // rank 0
-            }
-        }
-
-        // Concatenate block permutations into out[6] according to current orders
-        void materialize(uint8_t out[6]) const {
-            uint8_t* write = out;
-            uint8_t buf[6];
-            for (uint8_t i = 0; i < count; ++i) {
-                blocks[i].order.to_array(buf);
-                const uint8_t k = blocks[i].size;
-                for (uint8_t j = 0; j < k; ++j) *write++ = buf[j];
-            }
-        }
-
-        // Advance mixed-radix order across blocks; return true if advanced, false on full wrap
-        bool next() {
-            for (uint8_t i = 0; i < count; ++i) {
-                if (blocks[i].order.next_permutation()) return true;
-                blocks[i].order.reset();
-            }
-            return false;
-        }
-    };
-
-    // Build row/col blocks directly from signatures (replaces temporary maps)
-    static Blocks build_row_blocks(const SO6& s) {
-        ds::SignatureMaskMap m;
-        for (uint8_t row = 0; row < 6; ++row) m.add(SO6::row_frequency_signature(s, row), row);
-        m.sort_by_signature();
-        Blocks b; b.init_from_map(m); return b;
-    }
-    static Blocks build_col_blocks(const SO6& s) {
-        ds::SignatureMaskMap m;
-        for (uint8_t col = 0; col < 6; ++col) m.add(SO6::col_frequency_signature(s, col), col);
-        m.sort_by_signature();
-        Blocks b; b.init_from_map(m); return b;
-    }
-
-    // Precompute Order6 for all 6-bit masks (ascending index order -> rank 0)
-    static const std::array<order6::Order6, 64>& mask_order_lut() {
-        static const std::array<order6::Order6, 64> LUT = []{
-            std::array<order6::Order6, 64> a{};
-            for (uint16_t mask = 1; mask < 64; ++mask) {
-                uint8_t idx[6];
-                uint8_t k = 0;
-                for (uint8_t b = 0; b < 6; ++b) {
-                    if (mask & (1u << b)) idx[k++] = b;
-                }
-                a[mask] = order6::Order6::from_array(idx, k);
-            }
-            return a;
-        }();
-        return LUT;
-    }
-
     std::vector<FrequencySignature> gather_sorted_keys(const FrequencyTable& ecs) {
         std::vector<FrequencySignature> keys;
         keys.reserve(6);
