@@ -147,13 +147,17 @@ std::optional<SO6> build_two_lookup_tables_until_match(LUT& first, LUT& second) 
 
 namespace algo {
 
-void extend_lookup_table_bf(LUT& gen_set) {
+void extend_lookup_table_bf(LUT& gen_set, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {    
     // Hide cursor for this extension phase; signal handler restores on interrupt.
     indicators::show_console_cursor(false);
     const auto& current = gen_set.current();
 
-    // Maximum T-word length to explore from each leaf.
-    constexpr int kMaxDepth = 4;
+    const int kMaxDepth = std::max<int>(0, target_T_count - stored_depth_max);
+    if (kMaxDepth == 0) return;
+
+    std::atomic<bool> should_stop{false};
+    std::atomic_flag winner_claimed = ATOMIC_FLAG_INIT;
+    SO6 winner_value;
 
     // For this brute-force phase we treat "work" as iterating over leaves in
     // the current layer and, for each leaf, exploring all T-words of a given
@@ -180,7 +184,7 @@ void extend_lookup_table_bf(LUT& gen_set) {
                 std::size_t count = 1;
                 for (int i = 0; i < depth; ++i) count *= 14u;
 
-                for (std::size_t code = 0; code < count; ++code) {
+                for (std::size_t code = 0; code < count && !should_stop.load(std::memory_order_relaxed); ++code) {
                     SO6 cur = S;
                     std::size_t x = code;
                     uint8_t forbid = last_T;
@@ -191,6 +195,13 @@ void extend_lookup_table_bf(LUT& gen_set) {
                         cur = T_OperatorRuntime(t, false) * cur;
                         forbid = t;
                     }
+                    if (stop_pred && stop_pred(cur)) {
+                        should_stop.store(true, std::memory_order_relaxed);
+                        if (!winner_claimed.test_and_set(std::memory_order_acq_rel)) {
+                            winner_value = cur;
+                        }
+                        return;
+                    }
                     (void)cur;
                 }
             });
@@ -200,6 +211,9 @@ void extend_lookup_table_bf(LUT& gen_set) {
         // number of processed leaves as the "found" count so the final snapshot
         // shows a non-zero numerator instead of "0 / N".
         bars->complete(processed.load(std::memory_order_relaxed));
+    }
+    if (stop_value_out && should_stop.load(std::memory_order_relaxed)) {
+        *stop_value_out = winner_value;
     }
 }
 

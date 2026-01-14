@@ -23,11 +23,12 @@
 #include <cstdint>
 #include <compare>
 #include <algorithm>
-#include <initializer_list>
-#include <span>
 #include <concepts>
-#include <utility>
+#include <initializer_list>
 #include <ostream>
+#include <span>
+#include <string_view>
+#include <utility>
 #include "sort/sort6.hpp"
 #include "ds/SmallFreqMap.hpp"
 #include "ds/Lehmer6.hpp"
@@ -101,6 +102,9 @@ public:
                 if (i >= 36) break;
             }
         }
+
+        /// Parse a Mathematica-style 6x6 matrix string: {{a,b,c,d,e,f},{...},...}.
+        explicit SO6(std::string_view s);
 
         // ---------- Element access ----------
         /// Convert (row, col) to linear index into `arr` (column-major).
@@ -230,6 +234,7 @@ public:
         // Debug/inspection helpers
         void print_raw(std::ostream& os) const;
         void print_with_perms(std::ostream& os) const;
+        void print_mathematica(std::ostream& os) const;
 
         /// Materialize the canonical view (perms/sign) into raw storage and return it.
         /// The returned SO6 has identity row/col perms and zero sign_convention.

@@ -92,7 +92,8 @@ APP_OBJ := \
   apps/lut_history_tester.o \
   apps/canonical_form_print.o \
   apps/self_inverse_tester.o \
-  apps/pair_distance_tester.o
+  apps/pair_distance_tester.o \
+  apps/root_string_tester.o
 
 ALL_OBJ := $(OBJ) $(APP_OBJ)
 
@@ -102,7 +103,7 @@ DEBUG_CXXFLAGS := -g
 DEBUG_LDFLAGS := -ltcmalloc
 
 # Binaries produced by this workspace
-BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester
+BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester root_tester
 
 # Benchmarks / helper binaries we actively support
 BENCH_BINS := \
@@ -141,6 +142,14 @@ self_tester: apps/self_inverse_tester.o src/SO6.o src/algo/Canonicalizer.o src/G
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
 
 apps/self_inverse_tester.o: apps/self_inverse_tester.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# Root string tester (standalone)
+.PHONY: root_tester
+root_tester: apps/root_string_tester.o src/SO6.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS)
+
+apps/root_string_tester.o: apps/root_string_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Link the Target

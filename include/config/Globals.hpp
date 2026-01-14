@@ -6,6 +6,7 @@
 #define GLOBALS_HPP
 
 #include <cstdint>
+#include <string>
 
 // Threading and performance tracking
 extern uint8_t THREADS;
@@ -23,5 +24,6 @@ class Globals {
     public:
         static void setParameters(int argc, char *argv[]);
         static void configure();
+        static const std::string& root_spec();
 };
 #endif // GLOBALS_HPP

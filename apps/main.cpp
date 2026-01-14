@@ -14,8 +14,10 @@
 #include <cstdlib>
 #include <csignal>
 #include <chrono>
+#include <random>
 #include "config/Globals.hpp"
 #include "so6/SO6.hpp"
+#include "so6/T_Operator.hpp"
 #include "ds/LUT.hpp" // Rooted SO6 BFS/LUT
 #include "util/io_utils.hpp"
 #include "util/lut_export.hpp"
@@ -54,6 +56,18 @@ std::size_t read_mem_total_bytes() {
     return 0;
 }
 
+SO6 random_root(uint64_t seed, int steps, uint64_t& out_seed) {
+    std::mt19937_64 rng(seed);
+    std::uniform_int_distribution<int> d(0, 14);
+    SO6 cur = SO6::identity();
+    for (int i = 0; i < steps; ++i) {
+        cur = T_OperatorRuntime(static_cast<uint8_t>(d(rng))) * cur;
+    }
+    cur.last_T = 15; // ensure root has no forbidden previous T
+    out_seed = seed;
+    return cur;
+}
+
 } // namespace
 #include <iostream>
 
@@ -86,6 +100,29 @@ int main(int argc, char **argv)
     Globals::setParameters(argc, argv);         // Initialize parameters to command line argument
     Globals::configure();                       // Configure the globals to remove inconsistencies
 
+    const std::string root_spec = Globals::root_spec();
+    std::string root_label;
+    SO6 root = SO6::identity();
+    uint64_t root_seed = 0;
+    constexpr int kRandomRootSteps = 64;
+
+    if (root_spec.empty() || root_spec == "identity") {
+        root_label = "identity";
+    } else if (root_spec == "random") {
+        std::random_device rd;
+        root = random_root(rd(), kRandomRootSteps, root_seed);
+        root_label = "random (steps=" + std::to_string(kRandomRootSteps)
+                     + ", seed=" + std::to_string(root_seed) + ")";
+    } else if (!root_spec.empty() && root_spec.front() == '{') {
+        root = SO6(root_spec);
+        root.last_T = 15;
+        root_label = "custom (matrix)";
+    } else {
+        std::cerr << "[warn] unsupported --root value '" << root_spec
+                  << "'; using identity\n";
+        root_label = "identity (unsupported: " + root_spec + ")";
+    }
+
     // --- Configuration summary ---
     auto print_bool = [](const char* k, bool v){ std::cout << "  " << std::left << std::setw(22) << k << ": " << (v?"yes":"no") << "\n"; };
     auto print_u8   = [](const char* k, uint8_t v){ std::cout << "  " << std::left << std::setw(22) << k << ": " << unsigned(v) << "\n"; };
@@ -117,6 +154,7 @@ int main(int argc, char **argv)
               << ", denom_exp=" << sizeof(DyadicSqrt2().kBitsForDenomExp) << "\n";
     // GPU/OpenCL info omitted in CPU-only build
     // Inputs/flags
+    std::cout << "  " << std::left << std::setw(22) << "root" << ": " << root_label << "\n";
     print_bool("suppress_indicators", suppress_indicators);
     print_bool("verbose", verbose);
     print_u8("stored_depth_max", stored_depth_max);
@@ -128,8 +166,8 @@ int main(int argc, char **argv)
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism,
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
-    LUT gen_set = algo::create_lookup_table(SO6::identity(), nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
-    // algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
+    LUT gen_set = algo::create_lookup_table(root, nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
+    algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
 
     try {
         auto export_summary = lut_export::write_lut_database(gen_set);

@@ -1,3 +1,5 @@
+#include <cassert>
+#include <charconv>
 #include <stdexcept>
 #include "so6/SO6.hpp"
 #include "config/Globals.hpp"
@@ -59,6 +61,67 @@ namespace {
         }
         return Equal;
     }
+
+    static inline void skip_ws(const char*& p, const char* end) {
+        while (p < end) {
+            const char c = *p;
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v') {
+                break;
+            }
+            ++p;
+        }
+    }
+
+    static inline bool parse_dyadic(const char*& p, const char* end, DyadicSqrt2& out) {
+        skip_ws(p, end);
+        bool paren = false;
+        if (p < end && *p == '(') {
+            paren = true;
+            ++p;
+            skip_ws(p, end);
+        }
+        const char* start = p;
+        int ic = 0;
+        auto r1 = std::from_chars(p, end, ic);
+        assert(r1.ec == std::errc{} && r1.ptr != start);
+        if (r1.ec != std::errc{} || r1.ptr == start) return false;
+        p = r1.ptr;
+
+        skip_ws(p, end);
+        assert(p < end && *p == ',');
+        if (!(p < end && *p == ',')) return false;
+        ++p;
+
+        int sc = 0;
+        start = p;
+        auto r2 = std::from_chars(p, end, sc);
+        assert(r2.ec == std::errc{} && r2.ptr != start);
+        if (r2.ec != std::errc{} || r2.ptr == start) return false;
+        p = r2.ptr;
+
+        skip_ws(p, end);
+        assert(p < end && *p == 'e');
+        if (!(p < end && *p == 'e')) return false;
+        ++p;
+
+        unsigned de = 0;
+        start = p;
+        auto r3 = std::from_chars(p, end, de);
+        assert(r3.ec == std::errc{} && r3.ptr != start);
+        if (r3.ec != std::errc{} || r3.ptr == start) return false;
+        p = r3.ptr;
+
+        skip_ws(p, end);
+        if (paren) {
+            assert(p < end && *p == ')');
+            if (!(p < end && *p == ')')) return false;
+            ++p;
+        }
+
+        out = DyadicSqrt2(static_cast<int_t>(ic), static_cast<int_t>(sc), static_cast<uint8_t>(de));
+        if (out.numerator_bits == 0) out.denom_exp = 0;
+        return true;
+    }
 }
 
 /**
@@ -68,6 +131,57 @@ namespace {
 SO6::SO6()
 {
     // Storage already zero-initialized via in-class initializer.
+}
+
+SO6::SO6(std::string_view s) : SO6() {
+    SO6 tmp;
+    const char* p = s.data();
+    const char* end = p + s.size();
+    bool ok = true;
+
+    skip_ws(p, end);
+    assert(p < end && *p == '{');
+    if (!(p < end && *p == '{')) return;
+    ++p;
+
+    for (int r = 0; r < 6; ++r) {
+        skip_ws(p, end);
+        assert(p < end && *p == '{');
+        if (!(p < end && *p == '{')) { ok = false; break; }
+        ++p;
+        for (int c = 0; c < 6; ++c) {
+            DyadicSqrt2 z;
+            if (!parse_dyadic(p, end, z)) { ok = false; break; }
+            tmp.set_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c), z);
+            skip_ws(p, end);
+            if (c < 5) {
+                assert(p < end && *p == ',');
+                if (!(p < end && *p == ',')) { ok = false; break; }
+                ++p;
+            } else {
+                assert(p < end && *p == '}');
+                if (!(p < end && *p == '}')) { ok = false; break; }
+                ++p;
+            }
+        }
+        if (!ok) break;
+        skip_ws(p, end);
+        if (r < 5) {
+            assert(p < end && *p == ',');
+            if (!(p < end && *p == ',')) { ok = false; break; }
+            ++p;
+        } else {
+            assert(p < end && *p == '}');
+            if (!(p < end && *p == '}')) { ok = false; break; }
+            ++p;
+        }
+    }
+
+    if (!ok) return;
+    skip_ws(p, end);
+    assert(p == end);
+    if (p != end) return;
+    *this = tmp;
 }
 
 // SO6Lite conversions removed in this build
@@ -277,6 +391,20 @@ void SO6::print_with_perms(std::ostream& os) const {
         if (count_r != 5) os << "\n";
         count_r++;
     }
+}
+
+void SO6::print_mathematica(std::ostream& os) const {
+    os << "{";
+    for (int r = 0; r < 6; ++r) {
+        os << "{";
+        for (int c = 0; c < 6; ++c) {
+            os << get_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c));
+            if (c != 5) os << ",";
+        }
+        os << "}";
+        if (r != 5) os << ",";
+    }
+    os << "}";
 }
 
 SO6 SO6::materialize_canonical() const {

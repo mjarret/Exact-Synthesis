@@ -33,7 +33,7 @@ all: $(TARGETS)
 
 # Build individual targets
 # Dyadic mirror verification (reduced ranges)
-verify_dyadic.out: verify_dyadic.o
+verify_dyadic.out: verify_dyadic.o verify_dyadic_SO6.o
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
 
 verify_dyadic_vs_z2.out: verify_dyadic_vs_z2.o
@@ -55,6 +55,9 @@ canon_regression_Globals.o: ../src/Globals.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 canon_regression_T_Operator.o: ../src/T_Operator.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+verify_dyadic_SO6.o: ../src/SO6.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Clean up build files

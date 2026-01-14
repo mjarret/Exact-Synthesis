@@ -31,11 +31,15 @@ LUT create_lookup_table (
     const std::function<bool(const SO6&)>& stop_pred = nullptr,
     SO6* stop_value_out = nullptr);
 
-// Extend the lookup table by exactly one BFS layer, expanding one leaf at a time.
-// Sequential expansion (no parallel_for_each) to make order explicit and progress visible.
-// Uses the same neighbor rule as get_next_T_count (skip last_T), deduplicates against all
-// finalized layers and within the next layer. Finalizes the new layer into the LUT.
-void extend_lookup_table_bf(LUT& gen_set);
+// Extend search beyond the stored LUT using a breadth-first brute-force sweep.
+// The LUT depth is controlled by stored_depth_max, while target_T_count controls the
+// brute-force depth beyond the LUT (target_T_count - stored_depth_max layers).
+// Optional stop_pred is invoked after each candidate in the brute-force sweep; on
+// the first match it stops early and writes the match to stop_value_out.
+void extend_lookup_table_bf(
+    LUT& gen_set,
+    const std::function<bool(const SO6&)>& stop_pred = nullptr,
+    SO6* stop_value_out = nullptr);
 
 // Result of building two LUTs in lockstep until an intersection is found
 struct DualLUTMatch {

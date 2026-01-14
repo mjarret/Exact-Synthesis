@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include <cstring> // for std::strlen
+#include <string>
 
 #include "config/Globals.hpp"
 #include "so6/SO6.hpp"
@@ -17,6 +18,7 @@ struct Args {
     int search_depth{10};   // BFS depth limit for each side
     uint64_t seed{0};
     int threads{0};
+    std::string target_spec;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -29,13 +31,14 @@ Args parse_args(int argc, char** argv) {
             return nullptr;
         };
         if (s == "--help" || s == "-h") {
-        std::cout << "Usage: mitm_match_tester [--depth=N] [--search-depth=N] [--seed=U64] [--threads=N]\n";
+        std::cout << "Usage: mitm_match_tester [--depth=N] [--search-depth=N] [--seed=U64] [--threads=N] [--target=MAT]\n";
         std::exit(0);
     }
     if (auto* v = val("--depth"))   a.depth   = std::max(1, std::atoi(v));
     else if (auto* v = val("--search-depth")) a.search_depth = std::max(1, std::atoi(v));
     else if (auto* v = val("--seed")) a.seed  = std::strtoull(v, nullptr, 10);
     else if (auto* v = val("--threads")) a.threads = std::max(0, std::atoi(v));
+    else if (auto* v = val("--target")) a.target_spec = v;
     }
 return a;
 }
@@ -87,9 +90,15 @@ int main(int argc, char** argv) {
 
     std::mt19937_64 rng(args.seed ? args.seed : std::random_device{}());
 
-    // Pick a random target by a short random walk of length = depth, then random perm/sign.
-    SO6 target = random_target(rng, args.depth);
-    target = random_perm_sign(target, rng);
+    SO6 target = SO6::identity();
+    if (!args.target_spec.empty()) {
+        target = SO6(args.target_spec);
+        target.last_T = 15;
+    } else {
+        // Pick a random target by a short random walk of length = depth, then random perm/sign.
+        target = random_target(rng, args.depth);
+        target = random_perm_sign(target, rng);
+    }
 
     MITM mitm(SO6::identity(), target);
     MITMMatchResult res = generate_mitm_match(mitm);

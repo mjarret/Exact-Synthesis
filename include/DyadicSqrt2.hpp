@@ -9,11 +9,15 @@
 #ifndef DYADIC_SQRT2_HPP
 #define DYADIC_SQRT2_HPP
 
-#include <cstdint>
+#include <bit>
+#include <cassert>
+#include <charconv>
 #include <climits>
 #include <compare>
+#include <cstdint>
 #include <iostream>
-#include <bit>
+#include <string>
+#include <string_view>
 
 using word_t = uint32_t;
 using limb_t = uint16_t;
@@ -54,6 +58,41 @@ struct DyadicSqrt2 {
 
     constexpr DyadicSqrt2(int_t int_coeff, int_t sqrt2_coeff, uint8_t denom)
         : int_c(int_coeff), sqrt2_c(sqrt2_coeff), denom_exp(denom) {}
+
+    explicit DyadicSqrt2(std::string_view s) : data(0) {
+        const char* p = s.data();
+        const char* end = p + s.size();
+
+        int ic = 0;
+        auto r1 = std::from_chars(p, end, ic);
+        assert(r1.ec == std::errc{});
+        p = r1.ptr;
+
+        assert(p < end && *p == ',');
+        ++p;
+
+        int sc = 0;
+        auto r2 = std::from_chars(p, end, sc);
+        assert(r2.ec == std::errc{});
+        p = r2.ptr;
+
+        assert(p < end && *p == 'e');
+        ++p;
+
+        unsigned de = 0;
+        auto r3 = std::from_chars(p, end, de);
+        assert(r3.ec == std::errc{});
+        p = r3.ptr;
+
+        assert(p == end);
+
+        int_c = static_cast<int_t>(ic);
+        sqrt2_c = static_cast<int_t>(sc);
+        denom_exp = static_cast<uint8_t>(de);
+        if (numerator_bits == 0) denom_exp = 0;
+    }
+
+    explicit DyadicSqrt2(const std::string& s) : DyadicSqrt2(std::string_view{s}) {}
 
 private:
     // ---------- Helper bit ops (function replacements for Z2 macros) ----------

@@ -119,3 +119,7 @@ void Globals::configure()
     // No direct stdout here; a consolidated configuration summary
     // is printed at program start in apps/main.cpp.
 }
+
+const std::string& Globals::root_spec() {
+    return root_string;
+}
