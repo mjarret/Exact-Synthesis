@@ -185,8 +185,12 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
 
   state.counters["lut_depth"] = static_cast<double>(max_depth);
   state.counters["lut_elements"] = static_cast<double>(max_total);
-  state.counters["rss_bytes"] = static_cast<double>(max_rss);
-  state.counters["rss_delta_bytes"] = static_cast<double>(max_delta);
+  state.counters["rss_bytes"] = benchmark::Counter(
+      static_cast<double>(max_rss),
+      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kIs1024 | benchmark::Counter::kAvgThreads);
+  state.counters["rss_delta_bytes"] = benchmark::Counter(
+      static_cast<double>(max_delta),
+      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kIs1024 | benchmark::Counter::kAvgThreads);
 }
 
 static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
@@ -232,8 +236,12 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
 
   state.counters["lut_depth"] = static_cast<double>(max_depth);
   state.counters["lut_elements"] = static_cast<double>(max_total);
-  state.counters["rss_bytes"] = static_cast<double>(max_rss);
-  state.counters["rss_delta_bytes"] = static_cast<double>(max_delta);
+  state.counters["rss_bytes"] = benchmark::Counter(
+      static_cast<double>(max_rss),
+      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kIs1024 | benchmark::Counter::kAvgThreads);
+  state.counters["rss_delta_bytes"] = benchmark::Counter(
+      static_cast<double>(max_delta),
+      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kIs1024 | benchmark::Counter::kAvgThreads);
 }
 
 int main(int argc, char** argv) {
