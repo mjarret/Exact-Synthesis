@@ -130,14 +130,15 @@ void log_lut_summary(const LUT& lut, int tcount, const char* label, std::set<int
 struct LutStats {
   std::size_t depth = 0;
   std::size_t total = 0;
-  std::size_t capacity_bytes = 0;
+  std::size_t size_bytes = 0;
 };
 
 LutStats compute_lut_stats(const LUT& lut) {
   LutStats stats;
   for (const auto& layer : lut.layers()) {
-    stats.total += layer.size();
-    stats.capacity_bytes += layer.capacity() * sizeof(SO6);
+    const std::size_t sz = layer.size();
+    stats.total += sz;
+    stats.size_bytes += sz * sizeof(SO6);
     ++stats.depth;
   }
   if (stats.depth > 0) {
@@ -156,7 +157,7 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
   std::size_t max_delta = 0;
   std::size_t max_total = 0;
   std::size_t max_depth = 0;
-  std::size_t max_capacity_bytes = 0;
+  std::size_t max_size_bytes = 0;
 
   trim_process_memory();
   while (state.KeepRunningBatch(kMinBatchIterations)) {
@@ -174,7 +175,7 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
       LutStats stats = compute_lut_stats(lut);
       max_total = std::max(max_total, stats.total);
       max_depth = std::max(max_depth, stats.depth);
-      max_capacity_bytes = std::max(max_capacity_bytes, stats.capacity_bytes);
+      max_size_bytes = std::max(max_size_bytes, stats.size_bytes);
       if (g_log_layers) {
         log_lut_summary(lut, tcount, "identity", g_logged_identity);
       }
@@ -187,7 +188,7 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
   state.counters["lut_depth"] = static_cast<double>(max_depth);
   state.counters["lut_elements"] = static_cast<double>(max_total);
   state.counters["lut_bytes"] = benchmark::Counter(
-      static_cast<double>(max_capacity_bytes),
+      static_cast<double>(max_size_bytes),
       benchmark::Counter::kDefaults,
       benchmark::Counter::OneK::kIs1024);
   state.counters["rss_bytes"] = benchmark::Counter(
@@ -214,7 +215,7 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
   std::size_t max_delta = 0;
   std::size_t max_total = 0;
   std::size_t max_depth = 0;
-  std::size_t max_capacity_bytes = 0;
+  std::size_t max_size_bytes = 0;
 
   trim_process_memory();
 
@@ -233,7 +234,7 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
       LutStats stats = compute_lut_stats(lut);
       max_total = std::max(max_total, stats.total);
       max_depth = std::max(max_depth, stats.depth);
-      max_capacity_bytes = std::max(max_capacity_bytes, stats.capacity_bytes);
+      max_size_bytes = std::max(max_size_bytes, stats.size_bytes);
       if (g_log_layers) {
         log_lut_summary(lut, tcount, "random", g_logged_random);
       }
@@ -246,7 +247,7 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
   state.counters["lut_depth"] = static_cast<double>(max_depth);
   state.counters["lut_elements"] = static_cast<double>(max_total);
   state.counters["lut_bytes"] = benchmark::Counter(
-      static_cast<double>(max_capacity_bytes),
+      static_cast<double>(max_size_bytes),
       benchmark::Counter::kDefaults,
       benchmark::Counter::OneK::kIs1024);
   state.counters["rss_bytes"] = benchmark::Counter(
