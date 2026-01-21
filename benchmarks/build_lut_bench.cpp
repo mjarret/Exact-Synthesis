@@ -25,6 +25,8 @@ namespace {
 constexpr int kRandomRootSteps = 64;
 constexpr benchmark::IterationCount kMinBatchIterations = 10;
 constexpr double kMinSecondsPerBench = 2.0;
+constexpr double kSo6SizeBytes = static_cast<double>(sizeof(SO6));
+constexpr double kDyadicSizeBytes = static_cast<double>(sizeof(DyadicSqrt2));
 
 bool g_log_layers = false;
 std::mutex g_log_mu;
@@ -191,6 +193,10 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
       static_cast<double>(max_size_bytes),
       benchmark::Counter::kDefaults,
       benchmark::Counter::OneK::kIs1024);
+  state.counters["so6_size_bytes"] = benchmark::Counter(
+      kSo6SizeBytes, benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
+  state.counters["dyadic_size_bytes"] = benchmark::Counter(
+      kDyadicSizeBytes, benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
   state.counters["rss_bytes"] = benchmark::Counter(
       static_cast<double>(max_rss),
       benchmark::Counter::kDefaults,
@@ -250,6 +256,10 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
       static_cast<double>(max_size_bytes),
       benchmark::Counter::kDefaults,
       benchmark::Counter::OneK::kIs1024);
+  state.counters["so6_size_bytes"] = benchmark::Counter(
+      kSo6SizeBytes, benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
+  state.counters["dyadic_size_bytes"] = benchmark::Counter(
+      kDyadicSizeBytes, benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
   state.counters["rss_bytes"] = benchmark::Counter(
       static_cast<double>(max_rss),
       benchmark::Counter::kDefaults,
