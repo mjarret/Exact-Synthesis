@@ -159,8 +159,6 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
   std::size_t max_capacity_bytes = 0;
 
   trim_process_memory();
-  const std::size_t rss_base = getProcessRSSBytes();
-
   while (state.KeepRunningBatch(kMinBatchIterations)) {
     for (benchmark::IterationCount i = 0; i < kMinBatchIterations; ++i) {
       state.PauseTiming();
@@ -171,8 +169,7 @@ static void BM_BuildLUT_Identity(benchmark::State& state) {
       state.PauseTiming();
       const std::size_t rss_after = getProcessRSSBytes();
       const std::size_t delta = (rss_after > rss_before) ? (rss_after - rss_before) : 0;
-      const std::size_t rss_rel = (rss_after > rss_base) ? (rss_after - rss_base) : 0;
-      max_rss = std::max(max_rss, rss_rel);
+      max_rss = std::max(max_rss, rss_after);
       max_delta = std::max(max_delta, delta);
       LutStats stats = compute_lut_stats(lut);
       max_total = std::max(max_total, stats.total);
@@ -220,7 +217,6 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
   std::size_t max_capacity_bytes = 0;
 
   trim_process_memory();
-  const std::size_t rss_base = getProcessRSSBytes();
 
   while (state.KeepRunningBatch(kMinBatchIterations)) {
     for (benchmark::IterationCount i = 0; i < kMinBatchIterations; ++i) {
@@ -232,8 +228,7 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
       state.PauseTiming();
       const std::size_t rss_after = getProcessRSSBytes();
       const std::size_t delta = (rss_after > rss_before) ? (rss_after - rss_before) : 0;
-      const std::size_t rss_rel = (rss_after > rss_base) ? (rss_after - rss_base) : 0;
-      max_rss = std::max(max_rss, rss_rel);
+      max_rss = std::max(max_rss, rss_after);
       max_delta = std::max(max_delta, delta);
       LutStats stats = compute_lut_stats(lut);
       max_total = std::max(max_total, stats.total);
