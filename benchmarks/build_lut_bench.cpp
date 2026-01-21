@@ -10,7 +10,12 @@
 #include <thread>
 #include <vector>
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #include "config/Globals.hpp"
+#include "sys/memory.hpp"
 #include "so6/SO6.hpp"
 #include "so6/T_Operator.hpp"
 #include "algo/Generate.hpp"
@@ -42,6 +47,13 @@ void configure_globals(int tcount) {
   verbose = false;
   suppress_indicators = true;    // also compiled with EXACT_DISABLE_INDICATORS in targets
   Globals::configure();
+}
+
+void trim_process_memory() {
+#if defined(__GLIBC__)
+  // Encourage glibc to return freed arenas to the OS so the next bench starts from a clean RSS baseline.
+  malloc_trim(0);
+#endif
 }
 
 struct BenchArgs {
@@ -115,25 +127,64 @@ void log_lut_summary(const LUT& lut, int tcount, const char* label, std::set<int
   std::cout << "]\n";
 }
 
+struct LutStats {
+  std::size_t depth = 0;
+  std::size_t total = 0;
+};
+
+LutStats compute_lut_stats(const LUT& lut) {
+  LutStats stats;
+  for (const auto& layer : lut.layers()) {
+    stats.total += layer.size();
+    ++stats.depth;
+  }
+  if (stats.depth > 0) {
+    stats.depth -= 1; // depth excludes root layer
+  }
+  return stats;
+}
+
 } // namespace
 
 static void BM_BuildLUT_Identity(benchmark::State& state) {
   const int tcount = static_cast<int>(state.range(0));
   configure_globals(tcount);
 
+  std::size_t max_rss = 0;
+  std::size_t max_delta = 0;
+  std::size_t max_total = 0;
+  std::size_t max_depth = 0;
+
+  trim_process_memory();
+
   while (state.KeepRunningBatch(kMinBatchIterations)) {
     for (benchmark::IterationCount i = 0; i < kMinBatchIterations; ++i) {
+      state.PauseTiming();
+      const std::size_t rss_before = getProcessRSSBytes();
+      state.ResumeTiming();
       // Build LUT from identity with no early stop predicate
       auto lut = algo::create_lookup_table(SO6::identity(), nullptr, nullptr);
+      state.PauseTiming();
+      const std::size_t rss_after = getProcessRSSBytes();
+      const std::size_t delta = (rss_after > rss_before) ? (rss_after - rss_before) : 0;
+      max_rss = std::max(max_rss, rss_after);
+      max_delta = std::max(max_delta, delta);
+      LutStats stats = compute_lut_stats(lut);
+      max_total = std::max(max_total, stats.total);
+      max_depth = std::max(max_depth, stats.depth);
       if (g_log_layers) {
-        state.PauseTiming();
         log_lut_summary(lut, tcount, "identity", g_logged_identity);
-        state.ResumeTiming();
       }
+      state.ResumeTiming();
       benchmark::DoNotOptimize(lut.size());
       benchmark::ClobberMemory();
     }
   }
+
+  state.counters["lut_depth"] = static_cast<double>(max_depth);
+  state.counters["lut_elements"] = static_cast<double>(max_total);
+  state.counters["rss_bytes"] = static_cast<double>(max_rss);
+  state.counters["rss_delta_bytes"] = static_cast<double>(max_delta);
 }
 
 static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
@@ -144,19 +195,41 @@ static void BM_BuildLUT_RandomRoot(benchmark::State& state) {
   SO6 root = random_root(rng, kRandomRootSteps);
   root.last_T = 15; // ensure the root does not skip one T-move
 
+  std::size_t max_rss = 0;
+  std::size_t max_delta = 0;
+  std::size_t max_total = 0;
+  std::size_t max_depth = 0;
+
+  trim_process_memory();
+
   while (state.KeepRunningBatch(kMinBatchIterations)) {
     for (benchmark::IterationCount i = 0; i < kMinBatchIterations; ++i) {
+      state.PauseTiming();
+      const std::size_t rss_before = getProcessRSSBytes();
+      state.ResumeTiming();
       // Build LUT from a long random T-walk root with no early stop predicate
       auto lut = algo::create_lookup_table(root, nullptr, nullptr);
+      state.PauseTiming();
+      const std::size_t rss_after = getProcessRSSBytes();
+      const std::size_t delta = (rss_after > rss_before) ? (rss_after - rss_before) : 0;
+      max_rss = std::max(max_rss, rss_after);
+      max_delta = std::max(max_delta, delta);
+      LutStats stats = compute_lut_stats(lut);
+      max_total = std::max(max_total, stats.total);
+      max_depth = std::max(max_depth, stats.depth);
       if (g_log_layers) {
-        state.PauseTiming();
         log_lut_summary(lut, tcount, "random", g_logged_random);
-        state.ResumeTiming();
       }
+      state.ResumeTiming();
       benchmark::DoNotOptimize(lut.size());
       benchmark::ClobberMemory();
     }
   }
+
+  state.counters["lut_depth"] = static_cast<double>(max_depth);
+  state.counters["lut_elements"] = static_cast<double>(max_total);
+  state.counters["rss_bytes"] = static_cast<double>(max_rss);
+  state.counters["rss_delta_bytes"] = static_cast<double>(max_delta);
 }
 
 int main(int argc, char** argv) {
