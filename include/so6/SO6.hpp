@@ -307,6 +307,18 @@ public:
         // static inline size_t frequency_hash(const FrequencyMap& f);
         /// Report the current sizeof(SO6) in bytes (compile-time constant)
         static constexpr std::size_t size_bytes() { return sizeof(SO6); }
+
+        /// Cheap raw hash of matrix contents (FNV-1a over arr_ data).
+        /// Two matrices with identical raw bytes always produce the same hash.
+        /// Canonical-equivalent matrices with different raw bytes may differ.
+        inline uint64_t raw_hash() const {
+            uint64_t h = 14695981039346656037ULL;
+            for (int i = 0; i < 36; ++i) {
+                h ^= static_cast<uint64_t>(arr_[i].data);
+                h *= 1099511628211ULL;
+            }
+            return h;
+        }
 };
 
 namespace std {

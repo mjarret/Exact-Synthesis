@@ -156,6 +156,7 @@ int main(int argc, char **argv)
     // Inputs/flags
     std::cout << "  " << std::left << std::setw(22) << "root" << ": " << root_label << "\n";
     print_bool("suppress_indicators", suppress_indicators);
+    print_bool("use_tt (paired)", use_tt);
     print_bool("verbose", verbose);
     print_u8("stored_depth_max", stored_depth_max);
     print_u8("target_T_count", target_T_count);
@@ -166,8 +167,10 @@ int main(int argc, char **argv)
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism,
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
-    LUT gen_set = algo::create_lookup_table(root, nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
-    algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
+    LUT gen_set = use_tt
+        ? algo::create_lookup_table_TT(root, nullptr, nullptr)
+        : algo::create_lookup_table(root, nullptr, nullptr);
+    if (!use_tt) algo::extend_lookup_table_bf(gen_set); // BF extension only for single-T mode
 
     try {
         auto export_summary = lut_export::write_lut_database(gen_set);

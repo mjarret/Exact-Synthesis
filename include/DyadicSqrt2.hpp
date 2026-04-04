@@ -18,10 +18,11 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
-using word_t = uint32_t;
-using limb_t = uint16_t;
-using int_t  = int8_t;
+using word_t = uint64_t;
+using limb_t = uint32_t;
+using int_t  = int16_t;
 
 struct DyadicSqrt2 {
     // Layout constants (mirroring Z2.hpp)
@@ -139,7 +140,7 @@ public:
     inline __attribute__((always_inline))
     DyadicSqrt2& operator>>=(uint8_t shift) {
         numerator_bits = static_cast<limb_t>(
-            static_cast<int16_t>(lower_sign_extend(numerator_bits, shift)) >> shift);
+            static_cast<std::make_signed_t<limb_t>>(lower_sign_extend(numerator_bits, shift)) >> shift);
         denom_exp = static_cast<uint8_t>((denom_exp - 2u * shift) * (numerator_bits != 0));
         return *this;
     }
@@ -279,16 +280,16 @@ public:
     void reduce() {
         // Count leading zeros within each coefficient's logical width
         // (kBitsForIntC) instead of assuming 8 bits.
-        const uint8_t coeff_mask = static_cast<uint8_t>((1u << kBitsForIntC) - 1u);
+        const auto coeff_mask = static_cast<limb_t>((limb_t(1u) << kBitsForIntC) - 1u);
         const uint8_t int_zeros =
-            std::countr_zero(static_cast<uint8_t>(static_cast<uint8_t>(int_c) & coeff_mask));
+            std::countr_zero(static_cast<limb_t>(static_cast<limb_t>(int_c) & coeff_mask));
         const uint8_t sq_zeros  =
-            std::countr_zero(static_cast<uint8_t>(static_cast<uint8_t>(sqrt2_c) & coeff_mask));
+            std::countr_zero(static_cast<limb_t>(static_cast<limb_t>(sqrt2_c) & coeff_mask));
 
         if (int_zeros > sq_zeros) {
             int_c >>= 1;
             numerator_bits = swap_numerator(static_cast<limb_t>(
-                static_cast<int16_t>(lower_sign_extend(numerator_bits, sq_zeros)) >> sq_zeros));
+                static_cast<std::make_signed_t<limb_t>>(lower_sign_extend(numerator_bits, sq_zeros)) >> sq_zeros));
             denom_exp = denom_exp - (2u * sq_zeros + 1u);
             return;
         }
@@ -305,7 +306,7 @@ namespace std {
     template <>
     struct hash<DyadicSqrt2> {
         std::size_t operator()(const DyadicSqrt2& z) const {
-            return z.data & 0xFFFFFFu;
+            return z.data & ((word_t(1) << (DyadicSqrt2::kBitsForNumerator + DyadicSqrt2::kBitsForDenomExp)) - 1);
         }
     };
 }

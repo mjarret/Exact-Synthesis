@@ -21,8 +21,18 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(
     const std::function<bool(const SO6&)>& stop_pred = nullptr,
     SO6* stop_value_out = nullptr);
 
-// Build next T layer using transpose T^T moves and push into LUT (used for reverse/dual search).
-// API mirrors get_next_T_count.
+// Build next TT layer (paired T-gate alphabet, 165 compounds) and push into LUT.
+tbb::concurrent_unordered_set<SO6> get_next_TT_count(
+    LUT& gen_set,
+    indicators::ProgressTracker* bars = nullptr,
+    const std::function<bool(const SO6&)>& stop_pred = nullptr,
+    SO6* stop_value_out = nullptr);
+
+// Build the lookup table using paired TT alphabet (each layer = 2 T-gates).
+LUT create_lookup_table_TT(
+    const SO6& root = SO6::identity(),
+    const std::function<bool(const SO6&)>& stop_pred = nullptr,
+    SO6* stop_value_out = nullptr);
 
 // Build the lookup table up to configured stored depth.
 // ProgressTracker handles timing and RSS metrics internally; no external vectors needed.

@@ -125,11 +125,11 @@ namespace io_utils {
     }
 
     // Time Handling
-    inline std::chrono::_V2::high_resolution_clock::time_point now() {
-        return std::chrono::_V2::high_resolution_clock::now();
+    inline std::chrono::high_resolution_clock::time_point now() {
+        return std::chrono::high_resolution_clock::now();
     }
 
-    inline std::string time_since(std::chrono::_V2::high_resolution_clock::time_point &s) {
+    inline std::string time_since(std::chrono::high_resolution_clock::time_point &s) {
         std::chrono::duration<double> duration = now() - s;
         int64_t time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
         if (time < 1000) return std::to_string(time).append("ms");

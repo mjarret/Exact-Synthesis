@@ -13,6 +13,26 @@ inline size_t getAvailableMemory() {
     }
     return 0;
 }
+#elif defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#include <unistd.h>
+inline size_t getAvailableMemory() {
+    int64_t freeBytes = 0;
+    size_t len = sizeof(freeBytes);
+    if (sysctlbyname("hw.memsize", &freeBytes, &len, nullptr, 0) == 0)
+        return static_cast<size_t>(freeBytes);
+    return 0;
+}
+inline size_t getProcessRSSBytes() {
+    mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS)
+        return info.resident_size;
+    return 0;
+}
 #else
 #include <sys/sysinfo.h>
 #include <fstream>

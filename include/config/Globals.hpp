@@ -16,6 +16,7 @@ extern uint8_t target_T_count;
 extern uint8_t stored_depth_max;
 extern bool verbose;
 extern bool suppress_indicators;
+extern bool use_tt;
 
 /**
  * @brief Static helper for setting and validating global parameters.

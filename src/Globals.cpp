@@ -39,6 +39,7 @@ uint8_t target_T_count = 8;
 uint8_t stored_depth_max = 255;
 bool verbose = false;
 bool suppress_indicators = false;
+bool use_tt = false;
 
 void Globals::setParameters(int argc, char *argv[]) {
     try {
@@ -48,6 +49,7 @@ void Globals::setParameters(int argc, char *argv[]) {
         std::string threads_s = std::to_string(std::max(1u, std::thread::hardware_concurrency() - 1));
         bool verbose_flag = false;
         bool no_indicators_flag = false;
+        bool tt_flag = false;
         std::string root_s;
         bool log_scaling_flag = false;
         bool plot_scaling_flag = false;
@@ -63,6 +65,7 @@ void Globals::setParameters(int argc, char *argv[]) {
             ("r,root", "search tree root circuit string", cxxopts::value<std::string>(root_s))
             ("c,cases", "looking for specific cases (not used)", cxxopts::value<bool>(cases_flag))
             ("no-indicators", "suppress interactive progress indicators", cxxopts::value<bool>(no_indicators_flag))
+            ("tt", "use paired TT alphabet (165 compounds, each BFS layer = 2 T-gates)", cxxopts::value<bool>(tt_flag))
             ("log-scaling", "write scaling CSV at end (scaling.csv)", cxxopts::value<bool>(log_scaling_flag))
             ("plot-scaling", "generate scaling plots with gnuplot (requires gnuplot)", cxxopts::value<bool>(plot_scaling_flag))
         ;
@@ -94,6 +97,7 @@ void Globals::setParameters(int argc, char *argv[]) {
 
         // runtime flags
         suppress_indicators = no_indicators_flag;
+        use_tt = tt_flag;
         log_scaling = log_scaling_flag;
         plot_scaling = plot_scaling_flag;
         verbose = verbose_flag;

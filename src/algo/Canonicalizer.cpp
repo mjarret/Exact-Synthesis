@@ -7,7 +7,11 @@
 #include <map>
 #include <concepts>
 #include <span>
+#include <atomic>
 #include "ds/SignatureMaskMap.hpp"
+
+// Global counter for canonical_form() invocations (benchmark instrumentation)
+std::atomic<uint64_t> g_canonical_form_calls{0};
 #include "ds/Lehmer6.hpp"
 
 using std::strong_ordering;
@@ -219,6 +223,7 @@ namespace {
 }
 
 void SO6::canonical_form() {
+    g_canonical_form_calls.fetch_add(1, std::memory_order_relaxed);
     // Get equivalence classes and put into a consistent form
     auto row_ecs = row_equivalence_classes();
     PermBuffer row_perm{};
