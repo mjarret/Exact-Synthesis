@@ -50,7 +50,6 @@ public:
         lookupTable.reserve(static_cast<size_t>(stored_depth_max) + 1u);
         lookupTable.push_back(finalized_set{});
         lookupTable.back().insert(root);
-        all_raw_hashes_.insert(root.raw_hash());
     };
 
     void finalize_current_set(indicators::ProgressTracker* tracker = nullptr) {
@@ -86,11 +85,6 @@ public:
             if (finalize_bar) finalize_bar->set_progress(count);
         }
         lookupTable.emplace_back(std::move(finalized_layer));
-
-        // Populate raw hash set from newly finalized layer
-        for (const auto& s : lookupTable.back()) {
-            all_raw_hashes_.insert(s.raw_hash());
-        }
 
         // Release memory held by the concurrent working set
         working_set().swap(finalSet);
@@ -275,20 +269,9 @@ public:
         return *lookupTable.front().begin();
     }
 
-    /// Check if a raw hash has been seen in any finalized layer.
-    bool raw_hash_seen(uint64_t rh) const {
-        return all_raw_hashes_.count(rh) > 0;
-    }
-
-    /// Access the raw hash set (for pre-populating layer-local sets).
-    const tbb::concurrent_unordered_set<uint64_t>& raw_hashes() const {
-        return all_raw_hashes_;
-    }
-
 private:
     std::vector<finalized_set> lookupTable = {};
     working_set finalSet;
-    tbb::concurrent_unordered_set<uint64_t> all_raw_hashes_;
 };
 
 // Implementation of flat find() declared earlier.

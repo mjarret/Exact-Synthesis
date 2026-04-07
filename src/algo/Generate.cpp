@@ -17,7 +17,6 @@ namespace algo {
 // Skips repeating the last T used to reach S and respects an optional stop predicate.
 // Updates local_counter once per T tried and records the first stop hit in winner_value.
 static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unordered_set<SO6>& next,
-    tbb::concurrent_unordered_set<uint64_t>& raw_seen,
     const std::function<bool(const SO6&)>& stop_pred,
     std::atomic<bool>& should_stop, std::atomic_flag& winner_claimed,
     SO6& winner_value)
@@ -26,9 +25,6 @@ static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unorde
     for (uint8_t T = 0; T < 15 && !should_stop.load(std::memory_order_relaxed); ++T) {
         if (T == last_T) continue;
         SO6 toInsert = T_OperatorRuntime(T) * S;
-        uint64_t rh = toInsert.raw_hash();
-        if (raw_seen.count(rh)) continue;  // cheap pre-filter
-        raw_seen.insert(rh);
         if (lut.find(toInsert) == lut.end()) {
             auto ins = next.insert(toInsert);
             if (stop_pred && ins.second && stop_pred(toInsert)) {
@@ -42,18 +38,20 @@ static void add_new_neighbors_for(const SO6& S, LUT& lut, tbb::concurrent_unorde
 // Helper: expand all TT-neighbors (165 paired alphabets) for a single SO6 element.
 // No-repeat rule: skip compounds whose t_first == S.last_T.
 static void add_new_neighbors_TT_for(const SO6& S, LUT& lut, tbb::concurrent_unordered_set<SO6>& next,
-    tbb::concurrent_unordered_set<uint64_t>& raw_seen,
     const std::function<bool(const SO6&)>& stop_pred,
     std::atomic<bool>& should_stop, std::atomic_flag& winner_claimed,
     SO6& winner_value)
 {
     const uint8_t last_T = S.last_T;
-    for (uint8_t a = 0; a < 165 && !should_stop.load(std::memory_order_relaxed); ++a) {
-        if (TT_ALPHABET[a].t_first == last_T) continue;
-        SO6 toInsert = TT_OperatorRuntime(a) * S;
-        uint64_t rh = toInsert.raw_hash();
-        if (raw_seen.count(rh)) continue;  // cheap pre-filter
-        raw_seen.insert(rh);
+    const uint8_t n = TT_CANDIDATE_COUNTS[last_T];
+    const auto& candidates = TT_CANDIDATES[last_T];
+    for (uint8_t i = 0; i < n && !should_stop.load(std::memory_order_relaxed); ++i) {
+        const auto [alpha, t_out] = candidates[i];
+        SO6 toInsert = S;
+        TT_APPLY_TABLE[alpha](toInsert);
+        toInsert.set_element(0, 0, toInsert.get_element(0, 0));
+        toInsert.canonical_reset();
+        toInsert.last_T = t_out;
         if (lut.find(toInsert) == lut.end()) {
             auto ins = next.insert(toInsert);
             if (stop_pred && ins.second && stop_pred(toInsert)) {
@@ -104,8 +102,6 @@ static inline void parallel_for_each_with_bar(Iter begin, Iter end,
 tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::ProgressTracker* bars, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {
     auto& current = gen_set.current();
     tbb::concurrent_unordered_set<SO6> next;
-    // Layer-local raw hash set, seeded from LUT's persistent set
-    tbb::concurrent_unordered_set<uint64_t> raw_seen(gen_set.raw_hashes());
 
     std::atomic<bool> should_stop{false};
     std::atomic_flag winner_claimed = ATOMIC_FLAG_INIT;
@@ -115,7 +111,7 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(LUT& gen_set, indicators::Pr
         [&]() { return next.size(); },
         [&](const SO6& S) {
             if (should_stop.load(std::memory_order_relaxed)) return;
-            add_new_neighbors_for(S, gen_set, next, raw_seen, stop_pred, should_stop, winner_claimed, winner_value);
+            add_new_neighbors_for(S, gen_set, next, stop_pred, should_stop, winner_claimed, winner_value);
         });
 
     gen_set.push_back(std::move(next));
@@ -182,17 +178,16 @@ std::optional<SO6> build_two_lookup_tables_until_match(LUT& first, LUT& second) 
 tbb::concurrent_unordered_set<SO6> get_next_TT_count(LUT& gen_set, indicators::ProgressTracker* bars, const std::function<bool(const SO6&)>& stop_pred, SO6* stop_value_out) {
     auto& current = gen_set.current();
     tbb::concurrent_unordered_set<SO6> next;
-    tbb::concurrent_unordered_set<uint64_t> raw_seen(gen_set.raw_hashes());
 
     std::atomic<bool> should_stop{false};
     std::atomic_flag winner_claimed = ATOMIC_FLAG_INIT;
     SO6 winner_value;
 
-    parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 165, bars,
+    parallel_for_each_with_bar(current.begin(), current.end(), current.size(), 151, bars,
         [&]() { return next.size(); },
         [&](const SO6& S) {
             if (should_stop.load(std::memory_order_relaxed)) return;
-            add_new_neighbors_TT_for(S, gen_set, next, raw_seen, stop_pred, should_stop, winner_claimed, winner_value);
+            add_new_neighbors_TT_for(S, gen_set, next, stop_pred, should_stop, winner_claimed, winner_value);
         });
 
     gen_set.push_back(std::move(next));
@@ -211,7 +206,7 @@ LUT create_lookup_table_TT(const SO6& root, const std::function<bool(const SO6&)
             pred_wrapper = [&](const SO6& s){ bool r = stop_pred(s); if (r) layer_hit.store(true, std::memory_order_relaxed); return r; };
         }
 
-        auto bars = std::make_unique<indicators::ProgressTracker>(curr_T_count, gen_set.current().size() * 165, gen_set.current().size() * 165);
+        auto bars = std::make_unique<indicators::ProgressTracker>(curr_T_count, gen_set.current().size() * 151, gen_set.current().size() * 151);
 
         get_next_TT_count(gen_set, bars.get(), pred_wrapper, stop_value_out);
         gen_set.finalize_current_set(bars.get());

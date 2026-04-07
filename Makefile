@@ -152,6 +152,14 @@ root_tester: apps/root_string_tester.o src/SO6.o
 apps/root_string_tester.o: apps/root_string_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
+# Benchmark LUT (T vs TT comparison)
+.PHONY: benchmark_lut
+benchmark_lut: apps/benchmark_lut.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o src/util/lut_export.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o benchmark_lut.out $(LDFLAGS)
+
+apps/benchmark_lut.o: apps/benchmark_lut.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
 # Link the Target
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(OBJ) -o $@ $(LDFLAGS)
