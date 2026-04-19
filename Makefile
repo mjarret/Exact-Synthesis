@@ -160,6 +160,14 @@ benchmark_lut: apps/benchmark_lut.o src/SO6.o src/algo/Generate.o src/T_Operator
 apps/benchmark_lut.o: apps/benchmark_lut.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
+# CPU BFS bench — per-layer timing, output matches bfs_gpu (CUDA version).
+.PHONY: bfs_cpu_bench
+bfs_cpu_bench: apps/bfs_cpu_bench.o src/SO6.o src/algo/Generate.o src/T_Operator.o src/Globals.o src/algo/Canonicalizer.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o bfs_cpu_bench.out $(LDFLAGS)
+
+apps/bfs_cpu_bench.o: apps/bfs_cpu_bench.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
 # Link the Target
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(OBJ) -o $@ $(LDFLAGS)
