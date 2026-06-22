@@ -1,10 +1,73 @@
-*.o.tmp
+# ===== Build artifacts =====
 *.o
+*.o.tmp
 *.d
-main_z2
+*.a
+*.so
+*.so.*
+*.gcda
+*.gcno
+.thinlto-cache/
+build/
+ml/so6_double_t_objective/build/
+
+# ===== Compiled binaries (Makefile targets; no extension) =====
 *.out
-linear_transform_bench
+main.out
+hash_tester
+mitm_tester
+mitm_match_tester
+lut_history_tester
+canonical_form_print
+self_tester
+pair_tester
+root_tester
+amy_circuit_gen
+qc_to_so6
+verify_dyadic
+verify_mitms
+# benchmark binaries
+dyadic_bench
+lut_vs_T_depth_bench
+lut_build_bench
 mitm_bench
-mitm_seed_gen
+mitm_tcount_bench
+mitm_vs_mitms_bench
+mitms_searches_bench
+# stale legacy binary names (retained so they never get re-tracked)
+main_z2
 main_dyadic
 main_run_bench
+mitm_seed_gen
+linear_transform_bench
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-ml/
+
+# ===== Generated data, runs, and scratch =====
+data/
+runs/
+ml/so6_double_t_objective/runs/
+tmp/
+tmp_out/
+logs_ours/
+benchset_amy_random/
+
+# ===== Generated benchmark/run outputs (explicit names; tracked CSV/JSON stay safe) =====
+ours.csv
+lut_mem.csv
+lut_build.json
+mitm_tcount.csv
+
+# ===== Vendored external dependency (build-time only; ideally a git submodule) =====
+mitms/
+
+# ===== Editor / OS =====
+.codex
+.DS_Store
+*.swp
+*~

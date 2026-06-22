@@ -4,14 +4,14 @@ Exact-Synthesis is a C++20 project for generating and analyzing 6×6 matrices ov
 
 - Language: C++20
 - Parallelism: Intel oneTBB
-- Build: Makefile (g++)
+- Build: Makefile (clang by default; `COMPILER=gcc` selects g++)
 - UI: Lightweight CLI (header‑only cxxopts shim)
 - Progress: Trimmed, vendored indicators (MIT) with terminal bars
 
 ## Quick Start
 
 Requirements
-- g++ with C++20
+- g++ or clang with C++20
 - oneTBB development libraries (e.g., `sudo apt install -y libtbb-dev`)
 
 Build
@@ -45,18 +45,17 @@ Notes
 ## Repository Layout
 - `apps/`          Executables (entrypoints)
 - `include/`       Public headers
-  - `so6/`         SO6 core (`SO6.hpp`, `Signatures.inl`)
+  - `DyadicSqrt2.hpp`  Numeric core: Z[1/√2] (packed 24‑bit elements)
+  - `so6/`         SO6 core (`SO6.hpp`, `T_Operator.hpp`)
   - `ds/LUT.hpp`   Rooted BFS/LUT
-  - `policy/`      Hash policy (`HashPolicy.hpp`)
-  - `ds/`          Data structures (SmallFreqMap, Lehmer6)
-  - `iter/`        Iterators for SO6
+  - `ds/`          Data structures (SmallFreqMap, Lehmer6, …)
   - `util/`        Progress tracker and I/O helpers (uses trimmed indicators)
   - `sys/`         Memory helpers
-  - `third_party/` Header‑only CLI shim (cxxopts)
+  - `third_party/` Vendored header‑only deps (cxxopts, ankerl, indicators)
 - `src/`           Implementations (`SO6.cpp`, `algo/*.cpp`)
 - `tests/`         Small tests/bench helpers
 - `docs/`          Architecture and code map
-- `tools/`         Maintenance scripts
+- `benchmarks/`    Google Benchmark microbenchmarks
 
 ## Build Targets
 - `make`               Build `main.out`
@@ -70,58 +69,21 @@ Notes
 - Generation uses `tbb::parallel_for_each` and a per‑layer working set; finalization compacts into a hash set.
 - Progress bars show elapsed/remaining time and process RSS.
 
-## Hash Backend Selection
+## Hash Backends
 
-### Installed vs. vendored
-- Vendored in-tree: robin_hood (include/robin_hood.h), ankerl (include/third_party/ankerl/unordered_dense.h), phmap (include/third_party/parallel_hashmap).
-- System-installed via apt: Abseil (libabsl-dev), Folly (libfolly-dev).
-- Boost is usually present as headers (libboost-dev).
+Container choice is fixed in `include/ds/LUT.hpp`; there is no compile‑time backend switch.
 
-### Installing Abseil/Folly (Ubuntu)
-Run: 
+- Working set (during layer expansion): `tbb::concurrent_unordered_set<SO6>`.
+- Finalized layers: `ankerl::unordered_dense::set<SO6, FinalizedSetHash, std::equal_to<SO6>>`,
+  keyed by `SO6::primary_hash()` (a precomputed 16‑bit signature). Structural equality
+  (`std::equal_to<SO6>`) is the authoritative match, so the 16‑bit hash only steers bucket
+  distribution.
 
-	tools/install/install_backends.sh
-
-Or manually:
-
-	sudo apt-get update -y
-	sudo apt-get install -y libabsl-dev libfolly-dev
-
-Make will pick up Abseil via pkg-config automatically when BACKEND=absl.
-Finalized tables default to `ankerl::unordered_dense` (with an automatic fallback to `std::unordered_*` if the dense hash header is unavailable).
-
-- Default: vendored `robin_hood::unordered_flat_set` (50% max load factor via template param).
-- Alternate backends (header‑detected, fallback safe):
-  - `absl`     → `absl::flat_hash_set`
-  - `folly`    → `folly::F14FastSet`
-  - `boost`    → `boost::unordered_set`
-  - `ankerl`   → `ankerl::unordered_dense::set`
-  - `phmap`    → `phmap::flat_hash_set`
-
-Build selection (Makefile variable):
-```
-# defaults to robin_hood
-make
-
-# choose a backend; falls back to robin_hood if headers are missing
-make BACKEND=phmap
-make BACKEND=boost
-make BACKEND=folly
-
-# add include paths if needed
-make BACKEND=phmap EXTRA_INCLUDE="-I/path/to/phmap/include"
-
-# add extra compiler flags if needed
-make BACKEND=ankerl EXTRA_CXXFLAGS="-I/path/to/ankerl/include"
-```
-
-Notes
-- Missing headers: the wrapper automatically falls back to `robin_hood` and emits a compile‑time warning, so builds keep working even if a backend isn’t installed.
-- Linking: some backends (notably Abseil and Folly) may require linking additional libraries on your system. If you select such a backend and see link errors, either add the required libs via `LDFLAGS+=...` or build with `BACKEND=robin_hood`.
+The numeric backend is likewise unified on `DyadicSqrt2` (see the Makefile note: "unified on Dyadic; no compile‑time switch"). The only vendored hash header is `ankerl` (`include/third_party/ankerl/unordered_dense.h`).
 
 ## Third‑Party and Licensing
-- Indicators (MIT) reduced to required parts; see `include/indicators/NOTICE` and `include/indicators/LICENSE`.
-- termcolor (BSD) and Unicode wcwidth (Markus Kuhn) are included under their original notices; see `include/indicators/*`.
+- Indicators (MIT) reduced to required parts; see `include/third_party/indicators/NOTICE` and `include/third_party/indicators/LICENSE`.
+- termcolor (BSD) and Unicode wcwidth (Markus Kuhn) are included under their original notices; see `include/third_party/indicators/*`.
 - CLI uses a lightweight, vendored `cxxopts.hpp` shim (`include/third_party/cxxopts.hpp`).
 
 ## History & Authorship

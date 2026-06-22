@@ -4,13 +4,13 @@ This document orients you to the major modules, files, and responsibilities in t
 
 ## High‑Level Modules
 
-- Core Numerics (Z2)
-  - `include/Z2.hpp`
+- Core Numerics (Z[1/√2])
+  - `include/DyadicSqrt2.hpp`
   - Implements the compact number type Z[√2] with bit‑packed representation and arithmetic; header-only for maximal inlining.
 
 - SO6 (6×6 matrices over Z[√2])
   - `include/so6/SO6.hpp`, `src/SO6.cpp`
-  - `include/so6/Signatures.inl` (inline frequency hashing helpers)
+  - Inline frequency hashing helpers in `include/so6/SO6.hpp` (`z_freq_hash`)
   - Canonicalization & equivalence classes: `src/algo/Canonicalizer.cpp`
   - Generation: `src/algo/Generate.cpp`
 
@@ -42,13 +42,13 @@ This document orients you to the major modules, files, and responsibilities in t
    - For each `SO6`, enumerate left‑multiplication by `T` (`SO6::left_multiply_by_T`);
    - Deduplicate against `prior()`;
    - Push into working set, finalize to the next layer.
-3. LUT manages finalized layers as `robin_hood::unordered_flat_set<SO6>`.
+3. LUT manages finalized layers as `ankerl::unordered_dense::set<SO6>`.
 
 ## Equality, Ordering, Hashing
 
 - Equality: structural on `SO6` (`std::hash<SO6>` uses `SO6::hash` as precomputed signature).
 - Ordering (`operator<=>`): compares `col_hash` first, then column‑wise lex ordering via `utils::lex_order` using `Row`/`Col` permutations and sign convention.
-- Frequency hashing (`so6/Signatures.inl`): hashes row/col frequency maps via `SO6::z_freq_hash`.
+- Frequency hashing (inline in `so6/SO6.hpp`): hashes row/col frequency maps via `SO6::z_freq_hash`.
 
 ## Key Design Choices
 
@@ -61,5 +61,5 @@ This document orients you to the major modules, files, and responsibilities in t
 - Looking for matrix math / multiplication: `src/SO6.cpp`.
 - Looking for canonicalization: `src/algo/Canonicalizer.cpp`.
 - Looking for row/col permutations or ranks: `include/ds/Lehmer6.hpp`.
-- Looking for hashing: `include/so6/SO6.hpp` (`z_freq_hash`) and `include/so6/Signatures.inl`.
+- Looking for hashing: `include/so6/SO6.hpp` (`z_freq_hash`, `recompute_hash`).
 - Looking for generation loop / LUT orchestration: `src/algo/Generate.cpp`, `include/ds/LUT.hpp`.

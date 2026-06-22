@@ -1,10 +1,10 @@
 /**
  * @file DyadicSqrt2.hpp
- * @brief Function-based variant of Z2 (dyadic numbers over sqrt(2)).
+ * @brief Compact numeric type for the ring Z[1/sqrt(2)] (dyadic multiples of powers of sqrt(2)).
  *
- * Semantics mirror Z2.hpp but all helpers are implemented as inline
- * functions instead of preprocessor macros so we can benchmark the
- * macro-heavy vs function-heavy implementations.
+ * A value (int_c + sqrt2_c*sqrt(2)) / 2^denom_exp is bit-packed into 24 bits: two int8
+ * coefficients sharing a 16-bit numerator field, plus an 8-bit denominator exponent.
+ * All helpers are inline functions for maximal inlining on the hot path.
  */
 #ifndef DYADIC_SQRT2_HPP
 #define DYADIC_SQRT2_HPP
@@ -24,7 +24,7 @@ using limb_t = uint16_t;
 using int_t  = int8_t;
 
 struct DyadicSqrt2 {
-    // Layout constants (mirroring Z2.hpp)
+    // Layout constants
     static constexpr uint8_t kBitsForNumerator = sizeof(limb_t) * CHAR_BIT;
     static constexpr uint8_t kBitsForIntC      = kBitsForNumerator/2;
     static constexpr uint8_t kBitsForSqrt2C    = kBitsForNumerator/2;
@@ -198,8 +198,12 @@ public:
     inline __attribute__((always_inline))
     DyadicSqrt2& operator*=(const DyadicSqrt2& other) {
         numerator_bits = numerator_bits & kIntMask;
-        int_c   = int_c * other.int_c + ((sqrt2_c * other.sqrt2_c) << 1);
-        sqrt2_c = int_c * other.sqrt2_c + sqrt2_c * other.int_c;
+        const int_t a = int_c;
+        const int_t b = sqrt2_c;
+        const int_t c = other.int_c;
+        const int_t d = other.sqrt2_c;
+        int_c   = a * c + ((b * d) << 1);
+        sqrt2_c = a * d + b * c;
         denom_exp = denom_exp + other.denom_exp;
         return *this;
     }

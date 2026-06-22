@@ -5,7 +5,7 @@ This index lists the primary headers and sources by topic to reduce time spent h
 ## Core
 
 - Numbers: Z[√2]
-  - Header-only: `include/Z2.hpp` (packed arithmetic + helpers)
+  - Header-only: `include/DyadicSqrt2.hpp` (packed arithmetic + helpers)
 
 - Hashing helpers live inline in `include/so6/SO6.hpp`.
 
@@ -14,7 +14,7 @@ This index lists the primary headers and sources by topic to reduce time spent h
 - Main class:
   - `include/so6/SO6.hpp` (API, inline helpers, frequency hash wrappers)
   - `src/SO6.cpp` (ctor, identity, operator*, operator<=>, left_multiply_by_T dispatcher)
-  - Inline frequency hashing: `include/so6/Signatures.inl`
+  - Inline frequency hashing: `include/so6/SO6.hpp` (`z_freq_hash`)
 
 - Algorithms
   - Canonicalization & equivalence classes: `src/algo/Canonicalizer.cpp`
@@ -23,8 +23,8 @@ This index lists the primary headers and sources by topic to reduce time spent h
 ## Data Structures (ds)
 
 - Frequency map: `include/ds/SmallFreqMap.hpp`
-- 6‑Permutation (enumerated table + rank/unrank): `include/ds/Perm6Enum.hpp`
-- Flat set prototype (benchmarks): `include/ds/so6_flat_set.hpp`
+- 6‑Permutation (Lehmer‑encoded rank/unrank): `include/ds/Lehmer6.hpp`
+- Finalized set container: `ankerl::unordered_dense` (see `include/ds/LUT.hpp`)
 
 ## Storage & Lookup
 

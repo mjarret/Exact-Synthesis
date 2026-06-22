@@ -38,7 +38,7 @@ Thanks for your interest! This document outlines how to build, run, and submit c
 - Verify parallel code paths don’t introduce data races
 
 ## Third‑Party
-- Indicators (trimmed) and cxxopts header live under `include/indicators` and `include/third_party`
+- Indicators (trimmed), cxxopts, and ankerl headers live under `include/third_party`
 - Preserve NOTICE and LICENSE files when touching vendored code
 
 Thanks for contributing!

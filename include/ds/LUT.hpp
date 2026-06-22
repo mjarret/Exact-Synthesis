@@ -19,16 +19,17 @@
 
 using working_set = tbb::concurrent_unordered_set<SO6>;
 
-// Container-local hasher for finalized_set: widen to 32 bits using existing 16-bit fields
-// This changes only bucket placement inside the robin_hood set; it does not affect std::hash<SO6>
-struct FinalizedHash32 {
+// Hash functor for finalized_set: uses SO6's precomputed 16-bit primary signature
+// for bucket placement. Equality (std::equal_to<SO6>) is the authoritative match, so
+// the 16-bit signature is sufficient; this only influences bucket distribution.
+struct FinalizedSetHash {
     uint16_t operator()(const SO6& s) const noexcept {
         return s.primary_hash();
     }
 };
 
-// Backend-selectable finalized set
-using finalized_set = ankerl::unordered_dense::set<SO6, FinalizedHash32, std::equal_to<SO6>>;
+// Finalized layer container: ankerl::unordered_dense keyed by the SO6 primary signature.
+using finalized_set = ankerl::unordered_dense::set<SO6, FinalizedSetHash, std::equal_to<SO6>>;
 static const finalized_set empty_set;
 
 
@@ -228,8 +229,14 @@ public:
         // but might be less efficient due to repeated searches.
         int layer_idx = -1;
         int idx = 0;
+        const SO6* stored = nullptr;
         for (const auto& layer : lookupTable) {
-            if (layer.find(target) != layer.end()) { layer_idx = idx; break; }
+            auto it = layer.find(target);
+            if (it != layer.end()) {
+                layer_idx = idx;
+                stored = &(*it);
+                break;
+            }
             ++idx;
         }
 
@@ -238,7 +245,8 @@ public:
             return std::nullopt; // not found
         }
 
-        SO6 current = target;
+        if (!stored) return std::nullopt;
+        SO6 current = *stored;
         std::vector<uint8_t> path; // will be reversed at the end
 
         for (int l = layer_idx; l > 0; --l) {

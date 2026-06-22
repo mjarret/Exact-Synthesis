@@ -5,5 +5,5 @@ We acknowledge and thank prior contributors to earlier versions of this reposito
 - Full historical development, including earlier contributions, is preserved on the `legacy/full-history` branch.
 - Current authorship and roles are documented in `AUTHORS.md`.
 
-We also thank authors of the third‑party libraries used in this project; see notices and licenses under `include/indicators`, `include/third_party`, and `include/robin_hood.h`.
+We also thank authors of the third‑party libraries used in this project; see notices and licenses under `include/third_party/indicators` and `include/third_party`.
 
