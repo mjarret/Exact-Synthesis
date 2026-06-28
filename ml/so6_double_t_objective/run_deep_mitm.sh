@@ -19,7 +19,8 @@ export EXACT_SYNTHESIS_DIR="$REPO"
 # pip-install into it; we use the caller's $PYTHON if it already has the deps, else
 # build a local venv at .venv-deep. Override with PYTHON=/path/to/python.
 PY="${PYTHON:-python3}"
-if ! "$PY" -c "import numpy, pybind11" 2>/dev/null; then
+# setuptools is required to run setup.py and is NOT in a default py3.13 venv.
+if ! "$PY" -c "import numpy, pybind11, setuptools" 2>/dev/null; then
     VENV="$HERE/.venv-deep"
     if [ ! -x "$VENV/bin/python" ]; then
         echo "deps missing in '$PY'; creating venv at $VENV ..."
@@ -27,7 +28,8 @@ if ! "$PY" -c "import numpy, pybind11" 2>/dev/null; then
             echo "ERROR: 'python3 -m venv' failed. Run:  sudo apt install -y python3-venv python3-full"; exit 1; }
     fi
     "$VENV/bin/python" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
-    "$VENV/bin/python" -m pip install -q numpy pybind11 || { echo "ERROR: pip install into venv failed"; exit 1; }
+    "$VENV/bin/python" -m pip install -q numpy pybind11 setuptools wheel || {
+        echo "ERROR: pip install into venv failed"; exit 1; }
     PY="$VENV/bin/python"
 fi
 
