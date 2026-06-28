@@ -2,6 +2,7 @@
 #pragma once
 
 #include <tbb/concurrent_unordered_set.h>
+#include <chrono>
 #include <util/progress_tracker.hpp>
 #include <functional>
 #include <optional>
@@ -19,7 +20,8 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(
     LUT& gen_set,
     indicators::ProgressTracker* bars = nullptr,
     const std::function<bool(const SO6&)>& stop_pred = nullptr,
-    SO6* stop_value_out = nullptr);
+    SO6* stop_value_out = nullptr,
+    const std::chrono::steady_clock::time_point* deadline = nullptr);
 
 // Build next T layer using transpose T^T moves and push into LUT (used for reverse/dual search).
 // API mirrors get_next_T_count.
@@ -27,6 +29,21 @@ tbb::concurrent_unordered_set<SO6> get_next_T_count(
 // Build the lookup table up to configured stored depth.
 // ProgressTracker handles timing and RSS metrics internally; no external vectors needed.
 LUT create_lookup_table (
+    const SO6& root = SO6::identity(),
+    const std::function<bool(const SO6&)>& stop_pred = nullptr,
+    SO6* stop_value_out = nullptr);
+
+// TT siblings: one edge = two fused T operators (layer n = T-depth 2n). get_next_TT_count
+// expands the current finalized layer using the shared-first-T fan-out; create_lookup_table_TT
+// builds stored_depth_max/2 TT layers (stored_depth_max is even, in T-count units).
+tbb::concurrent_unordered_set<SO6> get_next_TT_count(
+    LUT& gen_set,
+    indicators::ProgressTracker* bars = nullptr,
+    const std::function<bool(const SO6&)>& stop_pred = nullptr,
+    SO6* stop_value_out = nullptr,
+    const std::chrono::steady_clock::time_point* deadline = nullptr);
+
+LUT create_lookup_table_TT (
     const SO6& root = SO6::identity(),
     const std::function<bool(const SO6&)>& stop_pred = nullptr,
     SO6* stop_value_out = nullptr);

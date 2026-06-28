@@ -1,0 +1,73 @@
+How to switch between the various BLAS/LAPACK implementations
+=============================================================
+
+- BLAS:
+
+ $ sudo update-alternatives --config libblas.so.3-<multiarch>
+
+- LAPACK:
+
+ $ sudo update-alternatives --config liblapack.so.3-<multiarch>
+
+where <multiarch> is the multiarch path for you architecture (e.g.
+x86_64-linux-gnu for amd64).
+
+More information is available at:
+
+ http://wiki.debian.org/DebianScience/LinearAlgebraLibraries
+
+
+Building an optimized OpenBLAS package for your machine
+=======================================================
+
+On amd64, arm64, i386, loong64, ppc64el, riscv64 and s390x, libopenblas
+provides a multiple architecture library. All kernels are included in the
+library and the one matching best your processor is selected at run time.
+Recompiling locally should bring minimal performance improvement.
+
+On the contrary, on other architectures, the package is compiled with minimal
+optimizations, so that it can run on all hardware. You may want to recompile it
+locally for optimal performance.
+
+If you want to create a custom OpenBLAS package, optimized for your specific
+machine, proceed as follows.
+
+1) Install the build dependencies and the source of the package:
+
+ $ sudo apt-get build-dep openblas
+ $ apt-get source openblas
+
+2) Compile the package:
+
+ $ cd openblas-<UPSTREAM_VERSION>
+ $ DEB_BUILD_OPTIONS=custom dpkg-buildpackage -uc -b
+
+where <UPSTREAM_VERSION> is replaced with the appropriate value.
+
+3) When the build finishes, it should produce several .deb files, whose precise
+names you can figure out using:
+
+ $ ls ../libopenblas*.deb
+
+Install those that you want using dpkg. For the 32-bit indexing version, you
+need at least libopenblas0 and one of the three of
+libopenblas0-{openmp,pthread,serial}. For the 64-bit indexing version, you need
+at least libopenblas64-0 and one of the three of
+libopenblas64-0-{openmp,pthread,serial}
+
+4) If you don't want the Debian package manager to overwrite your optimized
+package with a generic one on system upgrades, you can mark the OpenBLAS
+package to be on hold, with the following command (for the 32-bit indexing
+version):
+
+ $ sudo apt-mark hold libopenblas0 libopenblas0-{openmp,pthread,serial}
+
+Don't forget however to periodically check whether a more recent version of the
+package is available for the Debian suite that you are tracking, in which case
+you should go again through this procedure. The version check can be performed
+using:
+
+ $ aptitude versions libopenblas0
+
+ -- Sébastien Villemot <sebastien@debian.org>, Sun, 11 Aug 2024 10:34:19 +0200
+ -- Sylvestre Ledru <sylvestre@debian.org>  Tue, 31 May 2011 13:56:22 +0200

@@ -493,10 +493,142 @@ struct TKernelCT {
     }
 };
 
+template<int Row1, int Row2, int Row3, int Row4>
+struct TKernelCT_pair_commuting {
+    static constexpr uint8_t rows_mask_static = static_cast<uint8_t>((1u << Row1) | (1u << Row2) | (1u << Row3) | (1u << Row4));
+
+    inline __attribute__((always_inline))
+    void transform_column(SO6& S, uint8_t col) const {
+        DyadicSqrt2 a = S.get_element(static_cast<uint8_t>(Row1), col);
+        DyadicSqrt2 b = S.get_element(static_cast<uint8_t>(Row2), col);
+        DyadicSqrt2 c = S.get_element(static_cast<uint8_t>(Row3), col);
+        DyadicSqrt2 d = S.get_element(static_cast<uint8_t>(Row4), col);
+
+        const DyadicSqrt2 a_old = a;
+        const DyadicSqrt2 c_old = c;
+        a += b;
+        b -= a_old;
+        b = -b;
+
+        c += d;
+        d -= c_old;
+        d = -d;
+
+        a.denom_exp += (a.int_c != 0);
+        b.denom_exp += (b.int_c != 0);
+        c.denom_exp += (c.int_c != 0);
+        d.denom_exp += (d.int_c != 0);
+
+        S.set_element(static_cast<uint8_t>(Row1), col, a);
+        S.set_element(static_cast<uint8_t>(Row2), col, b);
+        S.set_element(static_cast<uint8_t>(Row3), col, c);
+        S.set_element(static_cast<uint8_t>(Row4), col, d);
+    }
+};
+
 template<int Row1, int Row2, bool Canonicalize = true>
 inline __attribute__((always_inline))
 SO6& apply_inplace_T(SO6& S) {
     return apply_inplace_row_kernel_opt<TKernelCT<Row1, Row2>, Canonicalize>(S, TKernelCT<Row1, Row2>{});
+}
+
+// -----------------------------------------------------------------------------
+// TT kernels: one TT move = T(B1,B2) applied after T(A1,A2), i.e. T_second * T_first.
+//
+// TTKernelCT is the COLD-PATH reference kernel: it applies both butterflies in a
+// single column traversal and reproduces EXACTLY the result of applying
+// TKernelCT<A1,A2> then TKernelCT<B1,B2>. It is used for one-shot verification,
+// path reconstruction, and the brute-force extension. The HOT path (TT BFS fan-out)
+// does NOT use it; it applies the shared first T once and then a single second-T
+// butterfly per candidate (see apply_T_values_only and add_new_TT_neighbors_for),
+// so the first T is amortized across all endpoints that share it.
+//
+// Disjoint pairs (4 distinct rows) commute: both butterflies touch disjoint entries.
+// Overlapping pairs (3 distinct rows, one shared row) do NOT commute: the second
+// butterfly must see the shared row's POST-first (normalized) value. All row indices
+// are compile-time, so the overlap topology is resolved with `if constexpr` and there
+// is no runtime row branching. Every source entry is read before any is overwritten.
+template<int A1, int A2, int B1, int B2>
+struct TTKernelCT {
+    static_assert(A1 >= 0 && A1 < A2 && A2 < 6, "TTKernelCT first pair out of range");
+    static_assert(B1 >= 0 && B1 < B2 && B2 < 6, "TTKernelCT second pair out of range");
+    // Disjoint iff the four rows are all distinct.
+    static constexpr bool disjoint = (A1 != B1 && A1 != B2 && A2 != B1 && A2 != B2);
+    static constexpr uint8_t rows_mask_static =
+        static_cast<uint8_t>((1u << A1) | (1u << A2) | (1u << B1) | (1u << B2));
+
+    // One T butterfly on (x, y), matching TKernelCT exactly (incl. denom_exp bump).
+    static inline __attribute__((always_inline))
+    void butterfly(DyadicSqrt2& x, DyadicSqrt2& y) {
+        const DyadicSqrt2 x_old = x;
+        x += y;
+        y -= x_old;
+        y = -y;
+        x.denom_exp += (x.int_c != 0);
+        y.denom_exp += (y.int_c != 0);
+    }
+
+    inline __attribute__((always_inline))
+    void transform_column(SO6& S, uint8_t col) const {
+        if constexpr (disjoint) {
+            DyadicSqrt2 a = S.get_element(A1, col);
+            DyadicSqrt2 b = S.get_element(A2, col);
+            DyadicSqrt2 c = S.get_element(B1, col);
+            DyadicSqrt2 d = S.get_element(B2, col);
+            butterfly(a, b);   // first T on (A1,A2)
+            butterfly(c, d);   // second T on (B1,B2); disjoint -> independent
+            S.set_element(A1, col, a);
+            S.set_element(A2, col, b);
+            S.set_element(B1, col, c);
+            S.set_element(B2, col, d);
+        } else {
+            // Overlapping: read both first-pair rows, apply the first butterfly, then
+            // feed the second butterfly with the post-first value of the shared row.
+            DyadicSqrt2 a = S.get_element(A1, col);
+            DyadicSqrt2 b = S.get_element(A2, col);
+            butterfly(a, b);   // a = row A1', b = row A2' (normalized, post-first)
+            // Second-pair inputs: take from registers if the row aliases A1/A2, else load.
+            DyadicSqrt2 c = (B1 == A1) ? a : (B1 == A2) ? b : S.get_element(B1, col);
+            DyadicSqrt2 d = (B2 == A1) ? a : (B2 == A2) ? b : S.get_element(B2, col);
+            butterfly(c, d);   // c = row B1', d = row B2' (post-second)
+            // Write each touched row exactly once with its final value. A row in the
+            // first pair that also appears in the second pair takes its second value.
+            if constexpr (A1 == B1) S.set_element(A1, col, c);
+            else if constexpr (A1 == B2) S.set_element(A1, col, d);
+            else S.set_element(A1, col, a);
+            if constexpr (A2 == B1) S.set_element(A2, col, c);
+            else if constexpr (A2 == B2) S.set_element(A2, col, d);
+            else S.set_element(A2, col, b);
+            if constexpr (B1 != A1 && B1 != A2) S.set_element(B1, col, c);
+            if constexpr (B2 != A1 && B2 != A2) S.set_element(B2, col, d);
+        }
+    }
+};
+
+// Value-only single-T transform: column butterfly only -- no canonical_reset, no
+// last_T/last_TT, no eager hash recompute. set_element still zeroes the lazy hash.
+// This is the HOT-PATH primitive for shared-first-T TT fan-out (apply first once,
+// then second per candidate).
+template<int R1, int R2>
+inline __attribute__((always_inline))
+SO6& apply_T_values_only(SO6& S) {
+    return apply_inplace_row_kernel_opt<TKernelCT<R1, R2>, /*Canonicalize=*/false>(S, TKernelCT<R1, R2>{});
+}
+
+// Value-only fused TT transform (cold path): both butterflies, no metadata.
+template<int A1, int A2, int B1, int B2>
+inline __attribute__((always_inline))
+SO6& apply_TT_values_only(SO6& S) {
+    return apply_inplace_row_kernel_opt<TTKernelCT<A1, A2, B1, B2>, /*Canonicalize=*/false>(S, TTKernelCT<A1, A2, B1, B2>{});
+}
+
+// Full one-shot TT transform; Canonicalize=true resets canonicalization metadata once
+// at the end (the public-op path used by TT_Operator). Does NOT set last_TT (the
+// operator does that).
+template<int A1, int A2, int B1, int B2, bool Canonicalize = true>
+inline __attribute__((always_inline))
+SO6& apply_inplace_TT(SO6& S) {
+    return apply_inplace_row_kernel_opt<TTKernelCT<A1, A2, B1, B2>, Canonicalize>(S, TTKernelCT<A1, A2, B1, B2>{});
 }
 
 template<int Row1, int Row2>

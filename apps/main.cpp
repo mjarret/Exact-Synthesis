@@ -63,7 +63,8 @@ SO6 random_root(uint64_t seed, int steps, uint64_t& out_seed) {
     for (int i = 0; i < steps; ++i) {
         cur = T_OperatorRuntime(static_cast<uint8_t>(d(rng))) * cur;
     }
-    cur.last_T = 15; // ensure root has no forbidden previous T
+    cur.last_T = 15;    // ensure root has no forbidden previous T (T mode)
+    cur.last_TT = 255;  // root sentinel for TT mode (no parent TT move)
     out_seed = seed;
     return cur;
 }
@@ -116,6 +117,7 @@ int main(int argc, char **argv)
     } else if (!root_spec.empty() && root_spec.front() == '{') {
         root = SO6(root_spec);
         root.last_T = 15;
+        root.last_TT = 255;
         root_label = "custom (matrix)";
     } else {
         std::cerr << "[warn] unsupported --root value '" << root_spec
@@ -157,6 +159,8 @@ int main(int argc, char **argv)
     std::cout << "  " << std::left << std::setw(22) << "root" << ": " << root_label << "\n";
     print_bool("suppress_indicators", suppress_indicators);
     print_bool("verbose", verbose);
+    std::cout << "  " << std::left << std::setw(22) << "generator" << ": "
+              << (generator_kind == GeneratorKind::TT ? "tt (one edge = two T; layer n = T-depth 2n)" : "t (one edge = one T)") << "\n";
     print_u8("stored_depth_max", stored_depth_max);
     print_u8("target_T_count", target_T_count);
     std::cout << "======================================\n";
@@ -166,8 +170,13 @@ int main(int argc, char **argv)
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism,
                            static_cast<std::size_t>(std::max<uint8_t>(1, THREADS)));
 
-    LUT gen_set = algo::create_lookup_table(root, nullptr, nullptr); // Build LUT; ProgressTracker handles metrics
-    algo::extend_lookup_table_bf(gen_set); // Extend LUT by one layer    
+    // Build the LUT with the selected generator. TT mode uses fused double-T edges
+    // (layer n = T-depth 2n); T mode is the original single-T generator.
+    LUT gen_set = (generator_kind == GeneratorKind::TT)
+                      ? algo::create_lookup_table_TT(root, nullptr, nullptr)
+                      : algo::create_lookup_table(root, nullptr, nullptr); // ProgressTracker handles metrics
+    algo::extend_lookup_table_bf(gen_set); // Extend LUT with single-T brute force to target depth
+    gen_set.dedup(); // Postprocess: remove any duplicates the parallel lazy-canon race left behind
 
     try {
         auto export_summary = lut_export::write_lut_database(gen_set);

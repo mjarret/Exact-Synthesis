@@ -362,7 +362,7 @@ class Sampler:
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
-    np.random.seed(seed)
+    np.random.seed(seed % (2**32))
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -397,13 +397,15 @@ def parse_args() -> CliConfig:
         parser.error("--eval-batches must be positive")
     if args.threads < 0:
         parser.error("--threads must be >= 0")
+    if args.seed is not None and args.seed < 0:
+        parser.error("--seed must be nonnegative")
     if args.depth_sampling_alpha < 0.0:
         parser.error("--depth-sampling-alpha must be nonnegative")
     return CliConfig(
         max_t_depth=int(args.max_t_depth),
         batch_size=int(args.batch_size),
         steps_per_epoch=int(args.steps_per_epoch),
-        seed=int(args.seed) if args.seed is not None else secrets.randbits(63),
+        seed=int(args.seed) if args.seed is not None else secrets.randbelow(2**32),
         threads=int(args.threads),
         eval_batches=int(args.eval_batches),
         save_dir=args.save_dir,

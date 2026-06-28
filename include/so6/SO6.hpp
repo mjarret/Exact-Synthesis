@@ -84,6 +84,10 @@ public:
                 unsigned char last_T : 4;
                 // Row sign mask: 1 bit per row (0 = POS, 1 = NEG); we use only 6 bits
                 uint8_t sign_convention : 6 = 0;
+                // Parent TT move index (0..164) for TT-generated states; 255 means "none".
+                // Used only for TT path reconstruction. Excluded from equality/hash like
+                // last_T. Fits the spare bits of this union so sizeof(SO6) is unchanged.
+                uint8_t last_TT : 8;
             };
         };
 
@@ -175,6 +179,17 @@ public:
         inline void canonical_reset() {
             row_perm_lh_ = Lehmer6::from_index(Lehmer6::SENTINEL);
             col_perm_lh_ = Lehmer6::from_index(Lehmer6::SENTINEL);
+            sign_convention = 0;
+        }
+
+        /// Invalidate all derived/cached state after a value-only transform.
+        /// Call exactly once after a complete public T or TT operation (not per
+        /// constituent T): forces lazy hash recompute and resets canonicalization.
+        /// Does NOT touch last_T / last_TT (those are set by the operator).
+        inline void invalidate_derived_state() {
+            hash = 0;
+            col_hash = 0;
+            canonical_reset();
         }
 
         inline void set_row_perm_lh(const Lehmer6& p) { row_perm_lh_ = p; }
@@ -308,6 +323,11 @@ public:
         /// Report the current sizeof(SO6) in bytes (compile-time constant)
         static constexpr std::size_t size_bytes() { return sizeof(SO6); }
 };
+
+// The TT feature added an 8-bit last_TT to the packed-flags union. It must fit in
+// the existing spare bits so the hot-path object size does not grow. If this fails,
+// the bitfield packing changed; investigate before proceeding (do not silently grow).
+static_assert(sizeof(SO6) == 156, "sizeof(SO6) changed; TT metadata must not grow it");
 
 namespace std {
     template <>

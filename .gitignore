@@ -71,3 +71,6 @@ mitms/
 .DS_Store
 *.swp
 *~
+
+# local convenience bundle (not code)
+deep_mitm_bundle.tar.gz

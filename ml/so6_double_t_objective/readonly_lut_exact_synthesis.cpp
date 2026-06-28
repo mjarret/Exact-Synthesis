@@ -26,6 +26,7 @@
 #include "algo/Generate.hpp"
 #include "config/Globals.hpp"
 #include "ds/LUT.hpp"
+#include "ds/MITM.hpp"
 #include "so6/SO6.hpp"
 #include "so6/T_Operator.hpp"
 #include "sys/memory.hpp"
@@ -410,6 +411,142 @@ public:
         return next_features;
     }
 
+    // Exact T-depth of arbitrary states: smallest layer index whose set contains the state, else -1.
+    // Serial on purpose: finalized_set::find lazily canonicalizes STORED elements via const_cast;
+    // single-threaded keeps that first-touch race-free (same rationale as LUT::dedup).
+    py::array_t<int64_t> depth_of(StateArray3 states) const {
+        log_call("depth_of", shape_string(states));
+        check_states_shape(states, "depth_of");
+        const std::size_t n = static_cast<std::size_t>(states.shape(0));
+        py::array_t<int64_t> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n)});
+        if (n == 0) return out;
+        const word_t* in_ptr = states.data();
+        int64_t* out_ptr = out.mutable_data();
+        for (std::size_t i = 0; i < n; ++i) {
+            SO6 s = unpack_state(in_ptr + i * static_cast<std::size_t>(kNumMatrixEntries));
+            int64_t found = -1;
+            for (std::size_t d = 0; d < layer_refs_.size(); ++d) {
+                if (layer_refs_[d]->find(s) != layer_refs_[d]->end()) {
+                    found = static_cast<int64_t>(d);
+                    break;
+                }
+            }
+            out_ptr[i] = found;
+        }
+        return out;
+    }
+
+    // Reducing mask (which of the 165 double-T moves take depth D -> D-2) for arbitrary states.
+    // Bit-for-bit identical to the sampler's masks: reuses fill_packed_reducing_mask against layer D-2.
+    py::array_t<uint8_t> reducing_mask_of(StateArray3 states) const {
+        log_call("reducing_mask_of", shape_string(states));
+        check_states_shape(states, "reducing_mask_of");
+        const std::size_t n = static_cast<std::size_t>(states.shape(0));
+        py::array_t<uint8_t> mask(std::vector<py::ssize_t>{
+            static_cast<py::ssize_t>(n), static_cast<py::ssize_t>(kNumDoubleT)});
+        if (n == 0) return mask;
+        const word_t* in_ptr = states.data();
+        uint8_t* mask_ptr = mask.mutable_data();
+        std::fill(mask_ptr, mask_ptr + n * static_cast<std::size_t>(kNumDoubleT), uint8_t{0});
+        for (std::size_t i = 0; i < n; ++i) {
+            SO6 s = unpack_state(in_ptr + i * static_cast<std::size_t>(kNumMatrixEntries));
+            int depth = -1;
+            for (std::size_t d = 0; d < layer_refs_.size(); ++d) {
+                if (layer_refs_[d]->find(s) != layer_refs_[d]->end()) { depth = static_cast<int>(d); break; }
+            }
+            if (depth >= 2) {
+                PackedMask packed;
+                fill_packed_reducing_mask(s, *layer_refs_[static_cast<std::size_t>(depth - 2)], &packed);
+                unpack_packed_mask_row(packed, mask_ptr + i * static_cast<std::size_t>(kNumDoubleT));
+            }
+        }
+        return mask;
+    }
+
+    // FAST optimal T-count: REUSE the prebuilt identity LUT (lut_/layer_refs_) as the left side; only
+    // grow the LUT around the target and look for the intersection. Targets within the LUT are an instant
+    // depth_of; deeper targets only need the right side grown to (D* - left_depth). max_right_depth bounds
+    // the right expansion (total reachable depth = left_depth + max_right_depth). -1 if not found/timed out.
+    py::array_t<int64_t> mitm_optimal_depth(StateArray3 states, int max_right_depth, double timeout_s) const {
+        log_call("mitm_optimal_depth", shape_string(states) + " mrd=" + std::to_string(max_right_depth));
+        check_states_shape(states, "mitm_optimal_depth");
+        const std::size_t n = static_cast<std::size_t>(states.shape(0));
+        py::array_t<int64_t> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n)});
+        if (n == 0) return out;
+        const word_t* in_ptr = states.data();
+        int64_t* out_ptr = out.mutable_data();
+        for (std::size_t i = 0; i < n; ++i) {
+            SO6 target = unpack_state(in_ptr + i * static_cast<std::size_t>(kNumMatrixEntries));
+            int64_t dl0 = -1;
+            for (std::size_t d = 0; d < layer_refs_.size(); ++d)
+                if (layer_refs_[d]->find(target) != layer_refs_[d]->end()) { dl0 = static_cast<int64_t>(d); break; }
+            if (dl0 >= 0) { out_ptr[i] = dl0; continue; }   // target already inside the prebuilt LUT
+            LUT right(target);
+            SO6 meet{};
+            bool hit = false;
+            auto pred = [&](const SO6& s) -> bool {
+                for (std::size_t d = 0; d < layer_refs_.size(); ++d)
+                    if (layer_refs_[d]->find(s) != layer_refs_[d]->end()) { hit = true; return true; }
+                return false;
+            };
+            std::chrono::steady_clock::time_point deadline;
+            const bool use_dl = timeout_s > 0.0;
+            if (use_dl) deadline = std::chrono::steady_clock::now()
+                + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(timeout_s));
+            int dr_hit = -1;
+            for (int dr = 1; dr <= max_right_depth; ++dr) {
+                if (use_dl && std::chrono::steady_clock::now() >= deadline) break;
+                algo::get_next_T_count(right, nullptr, pred, &meet, use_dl ? &deadline : nullptr);
+                right.finalize_current_set(nullptr);
+                if (hit) { dr_hit = dr; break; }
+            }
+            if (hit && dr_hit > 0) {
+                int64_t dl = -1;
+                for (std::size_t d = 0; d < layer_refs_.size(); ++d)
+                    if (layer_refs_[d]->find(meet) != layer_refs_[d]->end()) { dl = static_cast<int64_t>(d); break; }
+                out_ptr[i] = (dl >= 0) ? dl + static_cast<int64_t>(dr_hit) : -1;
+            } else {
+                out_ptr[i] = -1;
+            }
+        }
+        return out;
+    }
+
+    // Reference (slow): symmetric MITM that rebuilds the identity side each call. Used to cross-check the
+    // fast path. search_depth bounds the per-side depth; timeout_s caps each state's search.
+    py::array_t<int64_t> mitm_optimal_depth_full(StateArray3 states, int search_depth,
+                                            double timeout_s, bool bf) const {
+        log_call("mitm_optimal_depth_full", shape_string(states) + " sd=" + std::to_string(search_depth));
+        check_states_shape(states, "mitm_optimal_depth");
+        const std::size_t n = static_cast<std::size_t>(states.shape(0));
+        py::array_t<int64_t> out(std::vector<py::ssize_t>{static_cast<py::ssize_t>(n)});
+        if (n == 0) return out;
+        const word_t* in_ptr = states.data();
+        int64_t* out_ptr = out.mutable_data();
+        const uint8_t saved_sdm = stored_depth_max;
+        const bool saved_bf = mitm_bf_extension;
+        stored_depth_max = static_cast<uint8_t>(search_depth);
+        mitm_bf_extension = bf;
+        for (std::size_t i = 0; i < n; ++i) {
+            SO6 target = unpack_state(in_ptr + i * static_cast<std::size_t>(kNumMatrixEntries));
+            MITM mitm(SO6::identity(), target);
+            MITMMatchResult res;
+            if (timeout_s > 0.0) {
+                const auto deadline = std::chrono::steady_clock::now()
+                    + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                          std::chrono::duration<double>(timeout_s));
+                res = generate_mitm_match(mitm, &deadline);
+            } else {
+                res = generate_mitm_match(mitm);
+            }
+            out_ptr[i] = (res.found && res.dl >= 0 && res.dr >= 0)
+                             ? static_cast<int64_t>(res.dl + res.dr) : -1;
+        }
+        stored_depth_max = saved_sdm;
+        mitm_bf_extension = saved_bf;
+        return out;
+    }
+
 private:
     void log(const std::string& msg) const {
         if (!verbose_build_ && !debug_ && !log_calls_) return;
@@ -662,5 +799,30 @@ PYBIND11_MODULE(readonly_lut, m) {
             &ReadOnlyLUT::apply_tt_features_batch,
             py::arg("states"),
             py::arg("alpha_ids")
+        )
+        .def(
+            "depth_of",
+            &ReadOnlyLUT::depth_of,
+            py::arg("states")
+        )
+        .def(
+            "reducing_mask_of",
+            &ReadOnlyLUT::reducing_mask_of,
+            py::arg("states")
+        )
+        .def(
+            "mitm_optimal_depth",
+            &ReadOnlyLUT::mitm_optimal_depth,
+            py::arg("states"),
+            py::arg("max_right_depth") = 8,
+            py::arg("timeout_s") = 10.0
+        )
+        .def(
+            "mitm_optimal_depth_full",
+            &ReadOnlyLUT::mitm_optimal_depth_full,
+            py::arg("states"),
+            py::arg("search_depth") = 9,
+            py::arg("timeout_s") = 10.0,
+            py::arg("bf") = false
         );
 }

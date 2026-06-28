@@ -1,16 +1,19 @@
 {
-    "configurations": [
-        {
-            "name": "Linux",
-            "includePath": [
-                "${workspaceFolder}/**"
-            ],
-            "defines": [],
-            "compilerPath": "/usr/bin/g++",
-            "cStandard": "c23",
-            "cppStandard": "c++20",
-            "intelliSenseMode": "linux-clang-x64"
-        }
-    ],
-    "version": 4
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/.venv-ml/lib/python3.13/site-packages/pybind11/include",
+        "${workspaceFolder}/.venv-ml/include",
+        "/usr/include/python3.13"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c23",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "linux-clang-x64"
+    }
+  ],
+  "version": 4
 }

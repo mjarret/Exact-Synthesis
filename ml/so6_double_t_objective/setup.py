@@ -30,6 +30,8 @@ sources = [
     str(REPO / "src" / "Globals.cpp"),
     str(REPO / "src" / "algo" / "Generate.cpp"),
     str(REPO / "src" / "T_Operator.cpp"),
+    str(REPO / "src" / "TT_Operator.cpp"),
+    str(REPO / "src" / "MITM.cpp"),
 ]
 
 include_dirs: list[str] = []

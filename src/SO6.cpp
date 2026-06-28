@@ -12,7 +12,11 @@ constexpr auto Less = std::strong_ordering::less;
 constexpr auto Greater = std::strong_ordering::greater;
 
 namespace {
-    // Compare a single column under row/col permutations and sign masks
+    // Compare a single column under row/col permutations and sign masks.
+    // PRECONDITION: rowL/colL/rowR/colR are all non-null (the only callers, the two
+    // is_better_permutation overloads, pass Lehmer6::decode_ptr() results or std::array
+    // ::data(), never null). Indexing directly drops the candidate-side null branches the
+    // compiler cannot elide across the TU boundary -- pure codegen, identical arithmetic.
     static inline __attribute__((always_inline)) std::strong_ordering cmp_col_fast(
         const SO6& s,
         const uint8_t* rowL, const uint8_t* colL,
@@ -20,8 +24,8 @@ namespace {
         uint16_t first_sign_mask, uint16_t second_sign_mask,
         int col_idx)
     {
-        const int cL = colL ? colL[col_idx] : col_idx;
-        const int cR = colR ? colR[col_idx] : col_idx;
+        const int cL = colL[col_idx];
+        const int cR = colR[col_idx];
 
         int i = 0;
         std::strong_ordering comp1 = Equal;
@@ -29,10 +33,8 @@ namespace {
 
         // Phase 1: find orientation (first non-zero)
         for (; i < 6; ++i) {
-            const DyadicSqrt2 L = s.get_element(rowL ? rowL[i] : static_cast<uint8_t>(i),
-                                                static_cast<uint8_t>(cL));
-            const DyadicSqrt2 R = s.get_element(rowR ? rowR[i] : static_cast<uint8_t>(i),
-                                                static_cast<uint8_t>(cR));
+            const DyadicSqrt2 L = s.get_element(rowL[i], static_cast<uint8_t>(cL));
+            const DyadicSqrt2 R = s.get_element(rowR[i], static_cast<uint8_t>(cR));
             comp1 = L.int_c <=> 0;
             comp2 = R.int_c <=> 0;
             if (comp1 == Equal && comp2 == Equal) continue;
@@ -47,10 +49,8 @@ namespace {
 
         // Phase 2: lex compare with sign masks
         for (; i < 6; ++i) {
-            const DyadicSqrt2 L = s.get_element(rowL ? rowL[i] : static_cast<uint8_t>(i),
-                                                static_cast<uint8_t>(cL));
-            const DyadicSqrt2 R = s.get_element(rowR ? rowR[i] : static_cast<uint8_t>(i),
-                                                static_cast<uint8_t>(cR));
+            const DyadicSqrt2 L = s.get_element(rowL[i], static_cast<uint8_t>(cL));
+            const DyadicSqrt2 R = s.get_element(rowR[i], static_cast<uint8_t>(cR));
             const bool first_is_neg  = (((first_sign_mask  >> i) & utils::BITS) == utils::NEG);
             const bool second_is_neg = (((second_sign_mask >> i) & utils::BITS) == utils::NEG);
             const std::strong_ordering cmp = (second_is_neg ? -R : R) <=> (first_is_neg ? -L : L);
@@ -122,39 +122,50 @@ namespace {
         if (out.numerator_bits == 0) out.denom_exp = 0;
         return true;
     }
-}
 
-/**
- * Basic constructor. Initializes Zero matrix.
- *
- */
-SO6::SO6()
-{
-    // Storage already zero-initialized via in-class initializer.
-}
+    static inline bool consume_delim_or_ws(const char*& p, const char* end) {
+        const char* before = p;
+        skip_ws(p, end);
+        if (p != before) return true;
+        if (p < end && *p == ',') {
+            ++p;
+            skip_ws(p, end);
+            return true;
+        }
+        return false;
+    }
 
-SO6::SO6(std::string_view s) : SO6() {
-    SO6 tmp;
-    const char* p = s.data();
-    const char* end = p + s.size();
-    bool ok = true;
-
-    skip_ws(p, end);
-    assert(p < end && *p == '{');
-    if (!(p < end && *p == '{')) return;
-    ++p;
-
-    for (int r = 0; r < 6; ++r) {
+    static inline bool parse_curly_matrix(const char*& p, const char* end, SO6& out) {
+        bool ok = true;
+        SO6 tmp;
         skip_ws(p, end);
         assert(p < end && *p == '{');
-        if (!(p < end && *p == '{')) { ok = false; break; }
+        if (!(p < end && *p == '{')) return false;
         ++p;
-        for (int c = 0; c < 6; ++c) {
-            DyadicSqrt2 z;
-            if (!parse_dyadic(p, end, z)) { ok = false; break; }
-            tmp.set_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c), z);
+
+        for (int r = 0; r < 6 && ok; ++r) {
             skip_ws(p, end);
-            if (c < 5) {
+            assert(p < end && *p == '{');
+            if (!(p < end && *p == '{')) { ok = false; break; }
+            ++p;
+            for (int c = 0; c < 6; ++c) {
+                DyadicSqrt2 z;
+                if (!parse_dyadic(p, end, z)) { ok = false; break; }
+                tmp.set_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c), z);
+                skip_ws(p, end);
+                if (c < 5) {
+                    assert(p < end && *p == ',');
+                    if (!(p < end && *p == ',')) { ok = false; break; }
+                    ++p;
+                } else {
+                    assert(p < end && *p == '}');
+                    if (!(p < end && *p == '}')) { ok = false; break; }
+                    ++p;
+                }
+            }
+            if (!ok) break;
+            skip_ws(p, end);
+            if (r < 5) {
                 assert(p < end && *p == ',');
                 if (!(p < end && *p == ',')) { ok = false; break; }
                 ++p;
@@ -164,24 +175,75 @@ SO6::SO6(std::string_view s) : SO6() {
                 ++p;
             }
         }
-        if (!ok) break;
+
+        if (!ok) return false;
         skip_ws(p, end);
-        if (r < 5) {
-            assert(p < end && *p == ',');
-            if (!(p < end && *p == ',')) { ok = false; break; }
-            ++p;
-        } else {
-            assert(p < end && *p == '}');
-            if (!(p < end && *p == '}')) { ok = false; break; }
-            ++p;
-        }
+        assert(p == end);
+        if (p != end) return false;
+        out = tmp;
+        return true;
     }
 
-    if (!ok) return;
+    static inline bool parse_bracket_matrix(const char*& p, const char* end, SO6& out) {
+        bool ok = true;
+        SO6 tmp;
+        for (int r = 0; r < 6 && ok; ++r) {
+            skip_ws(p, end);
+            assert(p < end && *p == '[');
+            if (!(p < end && *p == '[')) { ok = false; break; }
+            ++p;
+            for (int c = 0; c < 6; ++c) {
+                DyadicSqrt2 z;
+                if (!parse_dyadic(p, end, z)) { ok = false; break; }
+                tmp.set_element(static_cast<uint8_t>(r), static_cast<uint8_t>(c), z);
+                if (c < 5) {
+                    if (!consume_delim_or_ws(p, end)) { ok = false; break; }
+                } else {
+                    skip_ws(p, end);
+                    assert(p < end && *p == ']');
+                    if (!(p < end && *p == ']')) { ok = false; break; }
+                    ++p;
+                }
+            }
+            if (!ok) break;
+            consume_delim_or_ws(p, end);
+        }
+
+        if (!ok) return false;
+        skip_ws(p, end);
+        assert(p == end);
+        if (p != end) return false;
+        out = tmp;
+        return true;
+    }
+}
+
+/**
+ * Basic constructor. Initializes Zero matrix.
+ *
+ */
+SO6::SO6()
+{
+    // Storage already zero-initialized via in-class initializer.
+    // History fields are not part of the matrix; default to "none" sentinels so a
+    // freshly constructed matrix is treated as a root for pruning/path purposes.
+    last_T = 15;
+    last_TT = 255;
+}
+
+SO6::SO6(std::string_view s) : SO6() {
+    const char* p = s.data();
+    const char* end = p + s.size();
     skip_ws(p, end);
-    assert(p == end);
-    if (p != end) return;
-    *this = tmp;
+    if (p >= end) return;
+    if (*p == '{') {
+        parse_curly_matrix(p, end, *this);
+        return;
+    }
+    if (*p == '[') {
+        parse_bracket_matrix(p, end, *this);
+        return;
+    }
 }
 
 // SO6Lite conversions removed in this build
@@ -259,16 +321,12 @@ SO6 SO6::operator*(const SO6 &other) const
 
 
 bool SO6::is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm, const uint16_t sign_perm) {
-    uint8_t cur_row_a[6];
-    uint8_t cur_col_a[6];
-    uint8_t cand_row_a[6];
-    uint8_t cand_col_a[6];
-    for (int i = 0; i < 6; ++i) {
-        cur_row_a[i]  = row_perm_lh()[i];
-        cur_col_a[i]  = col_perm_lh()[i];
-        cand_row_a[i] = row_perm[i];
-        cand_col_a[i] = col_perm[i];
-    }
+    // Decode each permutation once via the cached decoding table instead of
+    // indexing Lehmer6::operator[] (guard-checked static LUT) per element.
+    const uint8_t* cur_row_a  = Lehmer6::decode_ptr(row_perm_lh().bits());
+    const uint8_t* cur_col_a  = Lehmer6::decode_ptr(col_perm_lh().bits());
+    const uint8_t* cand_row_a = Lehmer6::decode_ptr(row_perm.bits());
+    const uint8_t* cand_col_a = Lehmer6::decode_ptr(col_perm.bits());
     for (int col = 0; col < 6; ++col) {
         auto cmp = cmp_col_fast(*this, cur_row_a, cur_col_a, cand_row_a, cand_col_a, sign_convention, sign_perm, col);
         if (cmp == Equal) continue;
@@ -278,13 +336,9 @@ bool SO6::is_better_permutation(const Lehmer6& row_perm, const Lehmer6& col_perm
 }
 
 bool SO6::is_better_permutation(const uint8_t* cand_row, const uint8_t* cand_col, const uint16_t sign_perm) {
-    // Fast path
-    uint8_t cur_row_a[6];
-    uint8_t cur_col_a[6];
-    for (int i = 0; i < 6; ++i) {
-        cur_row_a[i] = row_perm_lh()[i];
-        cur_col_a[i] = col_perm_lh()[i];
-    }
+    // Fast path: decode current permutation once via the cached decoding table.
+    const uint8_t* cur_row_a = Lehmer6::decode_ptr(row_perm_lh().bits());
+    const uint8_t* cur_col_a = Lehmer6::decode_ptr(col_perm_lh().bits());
     for (int col = 0; col < 6; ++col) {
         auto cmp = cmp_col_fast(*this, cur_row_a, cur_col_a, cand_row, cand_col, sign_convention, sign_perm, col);
         if (cmp == Equal) continue;
@@ -316,16 +370,12 @@ const std::strong_ordering SO6::operator<=>(const SO6 &other) const
 
     if (comp == Equal) {
         // Decode only for comparison from Lehmer6: build raw arrays via operator[]
-        uint8_t this_row_a[6];
-        uint8_t this_col_a[6];
-        uint8_t other_row_a[6];
-        uint8_t other_col_a[6];
-        for (int i = 0; i < 6; ++i) {
-            this_row_a[i]  = row_perm_lh()[i];
-            this_col_a[i]  = col_perm_lh()[i];
-            other_row_a[i] = other.row_perm_lh()[i];
-            other_col_a[i] = other.col_perm_lh()[i];
-        }
+        // Decode each permutation once via the cached decoding table instead of
+        // indexing Lehmer6::operator[] (guard-checked static LUT) per element.
+        const uint8_t* this_row_a  = Lehmer6::decode_ptr(row_perm_lh().bits());
+        const uint8_t* this_col_a  = Lehmer6::decode_ptr(col_perm_lh().bits());
+        const uint8_t* other_row_a = Lehmer6::decode_ptr(other.row_perm_lh().bits());
+        const uint8_t* other_col_a = Lehmer6::decode_ptr(other.col_perm_lh().bits());
 
         struct ArrayColIter {
             const SO6& s;
@@ -425,6 +475,7 @@ SO6 SO6::materialize_canonical() const {
     out.row_perm_lh_ = Lehmer6(); // identity
     out.col_perm_lh_ = Lehmer6(); // identity
     out.last_T = last_T;
+    out.last_TT = last_TT;   // retain TT provenance for path reconstruction
     out.recompute_hash();
     return out;
 }

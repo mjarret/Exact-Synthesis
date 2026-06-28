@@ -1,10 +1,10 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -Ofast -march=native -flto -mtune=native -funroll-loops -MMD -MP #-DDEBUG
+CXXFLAGS := -std=c++20 -Ofast -march=native -flto -mtune=native -funroll-loops -MMD -MP -fconstexpr-ops-limit=268435456 #-DDEBUG
 LDFLAGS := -ltbb -lbenchmark -lpthread
 
 # Include directories
-INCLUDE := -I../include -I. -I../include/boost -I../include/tbb
+INCLUDE := -I../include -I../include/third_party -I. -I../include/boost -I../include/tbb
 
 # Targets
 TARGETS := verify_dyadic.out verify_dyadic_vs_z2.out canon_regression.out
@@ -58,6 +58,35 @@ canon_regression_T_Operator.o: ../src/T_Operator.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 verify_dyadic_SO6.o: ../src/SO6.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+# TT operator correctness test (kernel equivalence, alphabet, LUT equivalence, paths)
+TT_OBJS := \
+	tt_operator_test.o \
+	tt_SO6.o \
+	tt_Canonicalizer.o \
+	tt_Globals.o \
+	tt_Generate.o \
+	tt_T_Operator.o \
+	tt_TT_Operator.o
+
+tt_operator_test.out: $(TT_OBJS)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $^ $(LDFLAGS)
+
+.PHONY: tt_operator_test
+tt_operator_test: tt_operator_test.out
+
+tt_SO6.o: ../src/SO6.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+tt_Canonicalizer.o: ../src/algo/Canonicalizer.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+tt_Globals.o: ../src/Globals.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+tt_Generate.o: ../src/algo/Generate.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+tt_T_Operator.o: ../src/T_Operator.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+tt_TT_Operator.o: ../src/TT_Operator.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 # Clean up build files

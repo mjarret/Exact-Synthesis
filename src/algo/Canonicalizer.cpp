@@ -34,6 +34,25 @@ namespace {
     // Local alias to make the storage type for permutations easy to swap later
     using PermBuffer = std::array<uint8_t, 6>;
 
+    // Fixed-capacity, stack-only list of the distinct frequency signatures in a
+    // matrix (at most 6). Drop-in replacement for the std::vector<FrequencySignature>
+    // previously used during canonicalization: same API surface (reserve/push_back/
+    // size/operator[]/begin/end) but no per-canonical_form heap allocation on the
+    // hot path. Trivially copyable, so returning it by value is free.
+    struct SigKeys {
+        FrequencySignature data_[6]{};
+        std::size_t n_ = 0;
+        void reserve(std::size_t) {}                       // no-op; capacity fixed at 6
+        void push_back(FrequencySignature v) { data_[n_++] = v; }
+        std::size_t size() const { return n_; }
+        FrequencySignature& operator[](std::size_t i) { return data_[i]; }
+        const FrequencySignature& operator[](std::size_t i) const { return data_[i]; }
+        FrequencySignature* begin() { return data_; }
+        FrequencySignature* end() { return data_ + n_; }
+        const FrequencySignature* begin() const { return data_; }
+        const FrequencySignature* end() const { return data_ + n_; }
+    };
+
     // Strong-order columns within the same matrix under a single sign mask,
     // using the existing lex_order helper (no packed-byte dependency).
     inline __attribute__((always_inline)) strong_ordering lex_order_col_rowonly_raw(
@@ -162,17 +181,16 @@ namespace {
         }
         return false;
     }
-    std::vector<FrequencySignature> gather_sorted_keys(const FrequencyTable& ecs) {
-        std::vector<FrequencySignature> keys;
-        keys.reserve(6);
+    SigKeys gather_sorted_keys(const FrequencyTable& ecs) {
+        SigKeys keys;
         for (const auto& kv : ecs) keys.push_back(kv.first);
         sort6::sorting_network_dispatch(keys);
         return keys;
     }
 
-    std::vector<FrequencySignature> prepare_initial_permutation(FrequencyTable& ecs,
-                                                                PermBuffer& buffer,
-                                                                Lehmer6& perm_out) {
+    SigKeys prepare_initial_permutation(FrequencyTable& ecs,
+                                        PermBuffer& buffer,
+                                        Lehmer6& perm_out) {
         auto keys = gather_sorted_keys(ecs);
         std::size_t w = 0;
         uint8_t tmp[6];
@@ -187,7 +205,7 @@ namespace {
     }
 
     void materialize_permutation(const FrequencyTable& ecs,
-                                 const std::vector<FrequencySignature>& keys,
+                                 const SigKeys& keys,
                                  uint8_t* out) {
         uint8_t* write = out;
         uint8_t tmp[6];
@@ -201,7 +219,7 @@ namespace {
 
     template <typename Comparator>
     void reorder_and_materialize(FrequencyTable& ecs,
-                                 const std::vector<FrequencySignature>& keys,
+                                 const SigKeys& keys,
                                  Comparator&& comp,
                                  uint8_t* out) {
         uint8_t* write = out;
@@ -228,8 +246,7 @@ void SO6::canonical_form() {
     PermBuffer col_perm{};
     auto col_keys = prepare_initial_permutation(col_ecs, col_perm, col_perm_lh_);
 
-
-    do { 
+    do {
         // Materialize candidate row permutation from equivalence classes
         materialize_permutation(row_ecs, row_keys, row_perm.data());
         // Use span view to stay abstract while hitting pointer fast-path

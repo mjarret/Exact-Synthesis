@@ -8,12 +8,14 @@ COMPILER ?= clang
 ifeq ($(COMPILER),clang)
   # Some systems only ship 'clang' (not clang++) — use clang driver
   CXX := clang
-  # Prefer ThinLTO with Clang and adjust deprecated -Ofast
-  CXXFLAGS := $(filter-out -flto=auto -Ofast,$(CXXFLAGS)) -flto=thin -O3 -fno-semantic-interposition
+  # Prefer ThinLTO with Clang and adjust deprecated -Ofast.
+  # -fconstexpr-steps: the TT alphabet/pruning tables (so6/TT_Alphabet.hpp) are built at
+  # compile time and exceed clang's default step budget; gcc's default budget is higher.
+  CXXFLAGS := $(filter-out -flto=auto -Ofast,$(CXXFLAGS)) -flto=thin -O3 -fno-semantic-interposition -fconstexpr-steps=268435456
 else ifeq ($(COMPILER),gcc)
   CXX := g++
   # GCC-specific perf tweaks
-  CXXFLAGS += -fno-semantic-interposition -fno-plt
+  CXXFLAGS += -fno-semantic-interposition -fno-plt -fconstexpr-ops-limit=268435456
 endif
 
 # Optional user-provided additions without overriding defaults
@@ -66,7 +68,7 @@ ifeq ($(COMPILER),clang)
   LDFLAGS += -lstdc++
 endif
  # Link-time perf optimizations and dead code removal
-LDFLAGS += -Wl,-O2 -Wl,--gc-sections -Wl,--as-needed
+LDFLAGS += -Wl,-O3 -Wl,--gc-sections -Wl,--as-needed
 
 # Optional linker selection and ThinLTO cache for faster incremental links
 LINKER ?=
@@ -82,7 +84,7 @@ ifeq ($(LINKER),lld)
 endif
 
 # Source Files
-SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp src/util/lut_export.cpp
+SRC := src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp apps/main.cpp src/algo/Generate.cpp src/T_Operator.cpp src/TT_Operator.cpp src/MITM.cpp src/util/lut_export.cpp
 OBJ := $(SRC:.cpp=.o)
 
 # Standalone app object files (built on demand)
@@ -93,7 +95,8 @@ APP_OBJ := \
   apps/canonical_form_print.o \
   apps/self_inverse_tester.o \
   apps/pair_distance_tester.o \
-  apps/root_string_tester.o
+  apps/root_string_tester.o \
+  apps/gen_amy_random_circuits.o
 
 ALL_OBJ := $(OBJ) $(APP_OBJ)
 
@@ -103,14 +106,18 @@ DEBUG_CXXFLAGS := -g
 DEBUG_LDFLAGS := -ltcmalloc
 
 # Binaries produced by this workspace
-BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester root_tester
+BINARIES := $(TARGET) hash_tester mitm_tester lut_history_tester canonical_form_print self_tester pair_tester root_tester amy_circuit_gen
 
 # Benchmarks / helper binaries we actively support
 BENCH_BINS := \
   dyadic_bench \
   lut_vs_T_depth_bench \
   lut_build_bench \
-  mitm_bench
+  tt_operator_bench \
+  mitm_bench \
+  mitm_tcount_bench \
+  mitm_vs_mitms_bench \
+  mitms_searches_bench
 
 # Default Rule
 all: $(TARGET)
@@ -152,6 +159,14 @@ root_tester: apps/root_string_tester.o src/SO6.o
 apps/root_string_tester.o: apps/root_string_tester.cpp
 	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
+# Amy-style random circuit generator (standalone)
+.PHONY: amy_circuit_gen
+amy_circuit_gen: apps/gen_amy_random_circuits.o src/util/amy_circuit.o src/SO6.o src/algo/Canonicalizer.o src/Globals.o src/T_Operator.o src/algo/Generate.o src/MITM.o
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $^ -o $@ $(LDFLAGS) -lm
+
+apps/gen_amy_random_circuits.o: apps/gen_amy_random_circuits.cpp
+	$(CXX) $(CLANG_CXXMODE) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
 # Link the Target
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(OBJ) -o $@ $(LDFLAGS)
@@ -165,6 +180,7 @@ $(TARGET): $(OBJ)
 T_OP_SAFE ?= 0
 ifeq ($(T_OP_SAFE),1)
 src/T_Operator.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
+src/TT_Operator.o: CXXFLAGS += -fno-strict-aliasing -fwrapv
 endif
 
 # Debug
@@ -209,10 +225,10 @@ print-vars:
 
 # Sanitizers (opt-in dev builds)
 asan:
-	$(MAKE) clean ; $(MAKE) CXXFLAGS='-std=c++20 -O1 -g -fsanitize=address -fno-omit-frame-pointer $(INCLUDE)'
+	$(MAKE) clean ; $(MAKE) CXXFLAGS='-std=c++20 -O3 -g -fsanitize=address -fno-omit-frame-pointer $(INCLUDE)'
 
 ubsan:
-	$(MAKE) clean ; $(MAKE) CXXFLAGS='-std=c++20 -O1 -g -fsanitize=undefined -fno-omit-frame-pointer $(INCLUDE)'
+	$(MAKE) clean ; $(MAKE) CXXFLAGS='-std=c++20 -O3 -g -fsanitize=undefined -fno-omit-frame-pointer $(INCLUDE)'
 
 # Clang PGO helpers (instrument/run/use). PROFILE points to .profdata
 .PHONY: pgo-gen pgo-use
@@ -262,6 +278,13 @@ lut_build_bench:
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp \
 		benchmarks/build_lut_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
 
+# TT operator microbenchmarks: per-endpoint transform cost (T vs TT) and full-LUT build
+.PHONY: tt_operator_bench
+tt_operator_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/TT_Operator.cpp \
+		benchmarks/tt_operator_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
 .PHONY: dyadic_bench
 dyadic_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
@@ -274,6 +297,25 @@ mitm_bench:
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
 		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
 		benchmarks/mitm_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+.PHONY: mitm_tcount_bench
+mitm_tcount_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/mitm_tcount_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+.PHONY: mitm_vs_mitms_bench
+mitm_vs_mitms_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -DEXACT_DISABLE_INDICATORS \
+		src/SO6.cpp src/algo/Canonicalizer.cpp src/Globals.cpp src/algo/Generate.cpp src/T_Operator.cpp src/MITM.cpp \
+		benchmarks/mitm_vs_mitms_bench.cpp -o $@ -lbenchmark -lpthread $(LDFLAGS)
+
+.PHONY: mitms_searches_bench
+mitms_searches_bench:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -Imitms/src -DEXACT_DISABLE_INDICATORS \
+		mitms/src/configs.cpp mitms/src/ring.cpp mitms/src/matrix.cpp mitms/src/gate.cpp \
+		mitms/src/circuit.cpp mitms/src/database.cpp mitms/src/search.cpp mitms/src/util.cpp \
+		benchmarks/mitms_searches_bench.cpp -o $@ -lbenchmark -lpthread -lblas -lm $(LDFLAGS)
 
 .PHONY: lut_vs_T_depth_bench
 lut_vs_T_depth_bench:

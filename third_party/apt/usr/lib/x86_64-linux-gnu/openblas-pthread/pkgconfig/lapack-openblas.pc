@@ -1,0 +1,10 @@
+prefix=/usr
+libdir=${prefix}/lib/x86_64-linux-gnu/openblas-pthread
+includedir=${prefix}/include/x86_64-linux-gnu
+Name: openblas-lapack
+Description: Optimized BLAS (linear algebra) library, LAPACK
+Version: 0.3.30+ds
+URL: https://github.com/OpenMathLib/OpenBLAS
+Libs: -L${libdir} -llapack
+Libs.private: -L${libdir} -llapack -lgfortran -lpthread -lm
+Cflags: -I${includedir}

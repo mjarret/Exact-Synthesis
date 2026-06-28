@@ -1,0 +1,16 @@
+libdir=/usr/lib/x86_64-linux-gnu/openblas-serial/
+libprefix=
+libnamesuffix=
+libsuffix=
+includedir=/usr/include/x86_64-linux-gnu/openblas-serial/
+omp_opt=
+openblas_config= USE_64BITINT=0 DYNAMIC_ARCH=1 DYNAMIC_OLDER=1 NO_CBLAS= NO_LAPACK= NO_LAPACKE=1 NO_AFFINITY=1 USE_OPENMP=0 GENERIC MAX_THREADS=128
+version=0.3.30
+extralib=-lm -lgfortran -lm -lgfortran
+Name: openblas
+Description: OpenBLAS is an optimized BLAS library based on GotoBLAS2 1.13 BSD version
+Version: ${version}
+URL: https://github.com/xianyi/OpenBLAS
+Libs: -L${libdir} -l${libprefix}openblas${libsuffix}${libnamesuffix}
+Libs.private: ${extralib}
+Cflags: -I${includedir} ${omp_opt}

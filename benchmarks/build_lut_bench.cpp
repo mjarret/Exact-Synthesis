@@ -23,7 +23,7 @@
 namespace {
 
 constexpr int kRandomRootSteps = 64;
-constexpr benchmark::IterationCount kMinBatchIterations = 10;
+constexpr benchmark::IterationCount kMinBatchIterations = 1;
 constexpr double kMinSecondsPerBench = 2.0;
 constexpr double kSo6SizeBytes = static_cast<double>(sizeof(SO6));
 constexpr double kDyadicSizeBytes = static_cast<double>(sizeof(DyadicSqrt2));
@@ -278,12 +278,12 @@ int main(int argc, char** argv) {
 
   benchmark::Initialize(&argc, argv);
 
-  for (int t = 1; t <= args.identity_max; ++t) {
-    benchmark::RegisterBenchmark("lut_build/identity", &BM_BuildLUT_Identity)
-        ->Arg(t)
-        ->MinTime(kMinSecondsPerBench)
-        ->Unit(benchmark::kMillisecond);
-  }
+  // for (int t = 1; t <= args.identity_max; ++t) {
+  //   benchmark::RegisterBenchmark("lut_build/identity", &BM_BuildLUT_Identity)
+  //       ->Arg(t)
+  //       ->MinTime(kMinSecondsPerBench)
+  //       ->Unit(benchmark::kMillisecond);
+  // }
   for (int t = 1; t <= args.random_max; ++t) {
     benchmark::RegisterBenchmark("lut_build/random_root", &BM_BuildLUT_RandomRoot)
         ->Arg(t)

@@ -14,6 +14,7 @@
 #include <iterator>
 #include "so6/SO6.hpp"
 #include "so6/T_Operator.hpp"
+#include "so6/TT_Operator.hpp"
 #include "sys/memory.hpp"
 #include "util/progress_tracker.hpp"
 
@@ -99,7 +100,58 @@ public:
 
     size_t size() const { return lookupTable.size(); }
 
+    // Single-threaded clean re-dedup of every finalized layer.
+    //
+    // The parallel build canonicalizes lazily (const_cast on first comparison), which can
+    // race when two threads first-touch the same *shared* matrix during dedup comparisons
+    // and corrupt its cached permutation. That can only leave a few extra duplicates
+    // (OVER-count); it can never drop a real element, because a positive equality verdict
+    // means the two matrices genuinely match under valid row/col permutations + signs, i.e.
+    // they really are the same class. A scrambled permutation can only *miss* a true match,
+    // not fabricate a false one.
+    //
+    // This pass rebuilds each layer single-threaded (so canonicalization recomputes cleanly,
+    // race-free): reset each element's cached canonical metadata, then re-insert in BFS layer
+    // order, dropping any element already present in an earlier layer. Returns the number of
+    // duplicates removed. Frees each original layer as it goes to keep peak memory ~1x.
+    size_t dedup() {
+        std::vector<finalized_set> clean;
+        clean.reserve(lookupTable.size());
+        // Cross-layer duplicate test scans the prior finalized layers. This is effectively
+        // cheap despite looking O(L^2): BFS layer sizes grow geometrically, so when the
+        // dominant final layer is processed the prior layers it probes are tiny. (A single
+        // global seen-set was measured ~75% SLOWER here -- it pays 861k copies + inserts into
+        // one large table, versus a handful of probes into small early tables -- and doubles
+        // dedup's peak RSS, which matters at the memory ceiling.)
+        size_t removed = 0;
+        for (auto& layer : lookupTable) {
+            finalized_set fresh;
+            fresh.reserve(layer.size());
+            for (SO6 e : layer) {
+                e.canonical_reset();                    // drop possibly-corrupted cached perms/sign
+                bool earlier = false;
+                for (const auto& prev : clean) {
+                    if (prev.find(e) != prev.end()) { earlier = true; break; }
+                }
+                if (earlier) { ++removed; continue; }   // cross-layer duplicate (racy lut.find miss)
+                if (!fresh.insert(std::move(e)).second) ++removed; // within-layer duplicate
+            }
+            finalized_set().swap(layer);                // release the original layer now
+            clean.emplace_back(std::move(fresh));
+        }
+        lookupTable = std::move(clean);
+        return removed;
+    }
+
     void push_back(const working_set& set) { finalSet.insert(set.begin(), set.end()); }
+
+    // Rvalue overload: right after finalize_current_set, finalSet is empty (it was
+    // swapped out), so steal the whole layer in O(1) instead of copying every element.
+    // Falls back to a range insert if finalSet still holds elements.
+    void push_back(working_set&& set) {
+        if (finalSet.empty()) finalSet.swap(set);
+        else finalSet.insert(set.begin(), set.end());
+    }
 
     const finalized_set& current() { return lookupTable.back(); }
     const finalized_set& current() const { return lookupTable.back(); }
@@ -250,18 +302,35 @@ public:
         std::vector<uint8_t> path; // will be reversed at the end
 
         for (int l = layer_idx; l > 0; --l) {
-            uint8_t t = current.last_T;
-            path.push_back(t);
             const auto& prev = lookupTable[static_cast<size_t>(l - 1)];
-            // Find a parent p in the previous layer such that T(t) * p == current.
-            // We do a linear scan here; this is only used for path reconstruction
-            // in diagnostics/benchmarks, not in the main search.
+            // We linear-scan the previous layer for the parent; this is only used for path
+            // reconstruction in diagnostics/benchmarks, not in the main search.
             bool found_parent = false;
-            for (const auto& cand : prev) {
-                if (T_OperatorRuntime(t) * cand == current) {
-                    current = cand;
-                    found_parent = true;
-                    break;
+            if (current.last_TT != tt::kNoMove) {
+                // TT-generated node: this layer step is one TT move = two individual T's.
+                // The returned path is in individual-T units, so emit BOTH constituents.
+                // Push (second, first); the final reverse yields forward order [first, second].
+                const uint8_t mv = current.last_TT;
+                const tt::TTMove& m = tt::kAlphabet[mv];
+                path.push_back(m.second);
+                path.push_back(m.first);
+                for (const auto& cand : prev) {
+                    if (TT_OperatorRuntime(mv) * cand == current) {
+                        current = cand;
+                        found_parent = true;
+                        break;
+                    }
+                }
+            } else {
+                // Single-T node (T-mode LUT): parent p such that T(last_T) * p == current.
+                const uint8_t t = current.last_T;
+                path.push_back(t);
+                for (const auto& cand : prev) {
+                    if (T_OperatorRuntime(t) * cand == current) {
+                        current = cand;
+                        found_parent = true;
+                        break;
+                    }
                 }
             }
             if (!found_parent) {
