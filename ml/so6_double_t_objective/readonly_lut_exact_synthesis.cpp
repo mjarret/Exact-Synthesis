@@ -235,18 +235,26 @@ public:
                 bool verbose_build = true,
                 bool debug = false,
                 bool log_calls = false,
-                std::vector<int> cached_depths = {})
+                std::vector<int> cached_depths = {},
+                const std::string& generator = "t")
         : max_t_depth_(max_t_depth),
           progress_mode_(progress_mode),
           verbose_build_(verbose_build),
           debug_(debug),
           log_calls_(log_calls),
-          cached_depths_(normalize_cached_depths(std::move(cached_depths), max_t_depth)) {
+          cached_depths_(normalize_cached_depths(std::move(cached_depths), max_t_depth)),
+          tt_mode_(generator == "tt" || generator == "TT") {
         if (max_t_depth_ < 0) {
             throw std::runtime_error("max_t_depth must be nonnegative");
         }
         if (progress_mode_ != "bars" && progress_mode_ != "plain" && progress_mode_ != "off") {
             throw std::runtime_error("progress_mode must be one of: bars, plain, off");
+        }
+        if (generator != "t" && generator != "T" && generator != "tt" && generator != "TT") {
+            throw std::runtime_error("generator must be 't' (single-T, every depth) or 'tt' (double-T, even depths)");
+        }
+        if (tt_mode_ && (max_t_depth_ % 2 != 0)) {
+            throw std::runtime_error("generator='tt' requires an even max_t_depth (TT advances T-depth by 2 per layer)");
         }
 
         resolved_threads_ = resolve_thread_count(threads);
@@ -272,9 +280,12 @@ public:
             + " cached_depths=" + cached_depths_string());
 
         suppress_indicators = (progress_mode_ != "bars");
-        log("[ctor] calling algo::create_lookup_table"
-            + std::string(progress_mode_ == "bars" ? " with indicator bars" : " with indicators off"));
-        lut_ = algo::create_lookup_table(SO6::identity(), nullptr, nullptr);
+        generator_kind = tt_mode_ ? GeneratorKind::TT : GeneratorKind::T;
+        log(std::string("[ctor] calling ")
+            + (tt_mode_ ? "algo::create_lookup_table_TT (double-T, even depths)"
+                        : "algo::create_lookup_table (single-T, every depth)"));
+        lut_ = tt_mode_ ? algo::create_lookup_table_TT(SO6::identity(), nullptr, nullptr)
+                        : algo::create_lookup_table(SO6::identity(), nullptr, nullptr);
 
         init_layer_refs();
 
@@ -493,10 +504,17 @@ public:
             const bool use_dl = timeout_s > 0.0;
             if (use_dl) deadline = std::chrono::steady_clock::now()
                 + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(timeout_s));
+            // Grow the right side toward the target. In TT mode each step advances the actual
+            // T-depth by 2 (fused double-T) and visits only even depths, matching the even-only
+            // left LUT; in T mode each step is one T. dr / dr_hit are in ACTUAL T-depth units.
+            const int right_step = tt_mode_ ? 2 : 1;
             int dr_hit = -1;
-            for (int dr = 1; dr <= max_right_depth; ++dr) {
+            for (int dr = right_step; dr <= max_right_depth; dr += right_step) {
                 if (use_dl && std::chrono::steady_clock::now() >= deadline) break;
-                algo::get_next_T_count(right, nullptr, pred, &meet, use_dl ? &deadline : nullptr);
+                if (tt_mode_)
+                    algo::get_next_TT_count(right, nullptr, pred, &meet, use_dl ? &deadline : nullptr);
+                else
+                    algo::get_next_T_count(right, nullptr, pred, &meet, use_dl ? &deadline : nullptr);
                 right.finalize_current_set(nullptr);
                 if (hit) { dr_hit = dr; break; }
             }
@@ -717,9 +735,22 @@ private:
 
     void init_layer_refs() {
         layer_refs_.clear();
-        layer_refs_.reserve(lut_.size());
-        for (auto it = lut_.layers_begin(); it != lut_.layers_end(); ++it) {
-            layer_refs_.push_back(&(*it));
+        if (tt_mode_) {
+            // lut_ stores TT layers at actual T-depth 0,2,4,...; re-index by ACTUAL T-depth with
+            // empty odd layers, so depth_of / reducing_mask / mitm all operate in real T-count
+            // units (a state at TT layer i lives at layer_refs_[2i]; odd indices are empty).
+            std::vector<const finalized_set*> compact;
+            for (auto it = lut_.layers_begin(); it != lut_.layers_end(); ++it) compact.push_back(&(*it));
+            layer_refs_.reserve(compact.empty() ? 0 : 2 * compact.size() - 1);
+            for (std::size_t i = 0; i < compact.size(); ++i) {
+                if (i > 0) layer_refs_.push_back(&empty_layer_);   // odd actual T-depth 2i-1 (unreachable by TT)
+                layer_refs_.push_back(compact[i]);                 // even actual T-depth 2i
+            }
+        } else {
+            layer_refs_.reserve(lut_.size());
+            for (auto it = lut_.layers_begin(); it != lut_.layers_end(); ++it) {
+                layer_refs_.push_back(&(*it));
+            }
         }
     }
 
@@ -757,6 +788,8 @@ private:
     std::size_t resolved_threads_{1};
     double build_seconds_{0.0};
     std::vector<int> cached_depths_;
+    bool tt_mode_;
+    finalized_set empty_layer_{};                 // sentinel layer for odd (TT-unreachable) T-depths
     LUT lut_;
     std::vector<const finalized_set*> layer_refs_;
     std::vector<CachedLayer> cached_layers_;
@@ -770,14 +803,15 @@ PYBIND11_MODULE(readonly_lut, m) {
 
     py::class_<ReadOnlyLUT>(m, "ReadOnlyLUT")
         .def(
-            py::init<int, int, const std::string&, bool, bool, bool, std::vector<int>>(),
+            py::init<int, int, const std::string&, bool, bool, bool, std::vector<int>, const std::string&>(),
             py::arg("max_t_depth") = 12,
             py::arg("threads") = 0,
             py::arg("progress_mode") = "plain",
             py::arg("verbose_build") = true,
             py::arg("debug") = false,
             py::arg("log_calls") = false,
-            py::arg("cached_depths") = std::vector<int>{}
+            py::arg("cached_depths") = std::vector<int>{},
+            py::arg("generator") = "t"
         )
         .def("layer_size", &ReadOnlyLUT::layer_size)
         .def(

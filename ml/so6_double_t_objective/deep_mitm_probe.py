@@ -82,26 +82,30 @@ def _gb(states):
     return states * BYTES_PER_STATE / 1e9
 
 
-def preflight(left_depth, want):
-    """Print projected memory for the once-built left LUT and the per-target right builds."""
+def preflight(left_depth, want, tt=True):
+    """Print projected memory for the once-built left LUT and the per-target right builds.
+    In tt (double-T) mode only EVEN depths are materialized, so sums skip odd layers."""
     sizes = project_layer_sizes(max(left_depth, max(want) - left_depth, 10))
-    left_cum = sum(sizes[:left_depth + 1])
+    step = 2 if tt else 1
+    cum = lambda upto: sum(sizes[d] for d in range(0, upto + 1, step))       # even-only when tt
+    left_cum = cum(left_depth)
     measured = left_depth <= 10
-    print(f"  left LUT to single-T depth {left_depth}: ~{left_cum:.3g} states  "
+    print(f"  generator={'tt (even depths only)' if tt else 't (every depth)'}")
+    print(f"  left LUT to T-depth {left_depth}: ~{left_cum:.3g} states  "
           f"~{_gb(left_cum):.0f} GB final (~{_gb(left_cum)*1.7:.0f} GB peak build)"
           f"{'  [MEASURED]' if measured else '  [extrapolated]'}")
     if _gb(left_cum) * 1.7 > 1400:
-        print(f"  !! WARNING: projected build peak ~{_gb(left_cum)*1.7:.0f} GB may exceed ~1.5 TB. "
-              f"Use a shallower --left-depth (13 is the practical max).")
+        print(f"  !! WARNING: projected build peak ~{_gb(left_cum)*1.7:.0f} GB may exceed ~1.5 TB; "
+              f"lower --left-depth.")
     print(f"  per-target right builds (cap = D - left_depth):")
     for D in want:
         r = D - left_depth
         if r < 0:
             print(f"    depth {D}: target already <= left LUT; instant (no right build)")
         else:
-            rcum = sum(sizes[:r + 1])
-            speed = "fast" if r <= 9 else ("moderate, ~min/target" if r <= 11 else "heavy, minutes/target")
-            print(f"    depth {D}: right to single-T {r}  ~{rcum:.3g} states  ~{_gb(rcum):.1f} GB ({speed})")
+            rcum = cum(r)
+            speed = "fast" if r <= 6 else ("moderate, ~min/target" if r <= 8 else "heavy, minutes/target")
+            print(f"    depth {D}: right to T-depth {r}  ~{rcum:.3g} states  ~{_gb(rcum):.1f} GB ({speed})")
 
 
 # ---- packing helpers (inverse of the binding's feature writer) --------------------------
@@ -153,8 +157,13 @@ def rss_gib():
 def gen_pool(lut, want, left_depth, mrd, to, n_chains, per, chunk=8, seed0=0,
              cache="runs/deep_pool.npz"):
     os.makedirs(os.path.dirname(cache), exist_ok=True)
-    max_k = max(want) // 2 + 3                                               # chain length to exceed deepest target
-    ks = np.clip(np.linspace(min(want) // 2, max_k, n_chains).round().astype(int), 1, None)
+    # Chain of k double-T moves -> optimal T-depth <= 2k (less when the walk folds back). Bias k
+    # toward the high end so the deep target bins (16,18) actually fill; +1 slack past max target
+    # to reach the top (overshoot is now cheap: every right build is bounded by the cap).
+    min_k, max_k = max(1, min(want) // 2), max(want) // 2 + 1
+    ks_choices = np.arange(min_k, max_k + 1)
+    weights = ks_choices - min_k + 1                                         # 1,2,3,4: favor longer chains
+    ks = np.resize(np.repeat(ks_choices, weights), n_chains)                 # deterministic (resume-stable)
     if os.path.exists(cache):
         z = np.load(cache)
         chains, depths = z["chains"].astype(np.uint32), z["depths"].astype(np.int64)
@@ -228,15 +237,17 @@ def analyze(lut, states, D, left_depth, to, topk=8, do_quad=True):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--generator", default="tt", choices=["t", "tt"],
+                   help="left LUT + MITM right build: 'tt' = double-T, even depths only (default, faster); 't' = single-T")
     p.add_argument("--left-depth", type=int, default=12,
-                   help="single-T depth of the once-built left LUT (12 ~21GB; 13 ~185GB is the 1.5TB max)")
-    p.add_argument("--depths", type=int, nargs="+", default=[16, 18, 20],
-                   help="target single-T depths; with left=12 these need right<=8 (fast). Reaches depth 20.")
+                   help="T-depth of the once-built left LUT (must be even for tt; 12 ~18GB even-only)")
+    p.add_argument("--depths", type=int, nargs="+", default=[14, 16, 18],
+                   help="target T-depths (even). Capped at 18: with left=12 these need right<=6 (bounded, fast).")
     p.add_argument("--max-right-depth", type=int, default=None,
                    help="right-side build cap for pool binning (default = max(depths) - left_depth)")
-    p.add_argument("--m", type=int, default=12, help="states analyzed per depth")
-    p.add_argument("--n-chains", type=int, default=250)
-    p.add_argument("--timeout", type=float, default=600.0, help="per-MITM-call timeout (s)")
+    p.add_argument("--m", type=int, default=20, help="states analyzed per depth")
+    p.add_argument("--n-chains", type=int, default=500)
+    p.add_argument("--timeout", type=float, default=120.0, help="per-MITM-call timeout (s); right<=6 is well under this")
     p.add_argument("--no-quad", action="store_true", help="skip the quad-T k=1 check")
     p.add_argument("--estimate-only", action="store_true", help="print projected memory and exit (no build)")
     p.add_argument("--out", default="runs/deep_results.json")
@@ -246,8 +257,9 @@ def main():
     mrd = args.max_right_depth if args.max_right_depth is not None else max(want) - args.left_depth
     cached = list(range(2, args.left_depth + 1, 2))
 
+    tt = args.generator == "tt"
     print("== projected memory (preflight) ==")
-    preflight(args.left_depth, want)
+    preflight(args.left_depth, want, tt=tt)
     print()
     if args.estimate_only:
         return
@@ -261,13 +273,15 @@ def main():
             "results": []}
 
     t0 = time.time()
-    print(f"\n== [phase 1/3] building left LUT to single-T depth {args.left_depth} (cached {cached}) ==\n"
-          f"  (silent C++ build; heartbeat every 15s -- watch RSS climb toward "
-          f"~{_gb(sum(project_layer_sizes(args.left_depth)[:args.left_depth+1])):.0f} GB)", flush=True)
+    _ls = project_layer_sizes(args.left_depth)
+    _left_gb = _gb(sum(_ls[d] for d in range(0, args.left_depth + 1, 2 if tt else 1)))
+    print(f"\n== [phase 1/3] building left LUT to T-depth {args.left_depth} "
+          f"(generator={args.generator}, cached {cached}) ==\n"
+          f"  (silent C++ build; heartbeat every 15s -- watch RSS climb toward ~{_left_gb:.0f} GB)", flush=True)
     with Heartbeat("building left LUT"):
         lut = readonly_lut.ReadOnlyLUT(max_t_depth=args.left_depth, threads=0, progress_mode="off",
                                        verbose_build=False, debug=False, log_calls=False,
-                                       cached_depths=cached)
+                                       cached_depths=cached, generator=args.generator)
     print(f"  [+{_el():.0f}s] left LUT ready in {time.time()-t0:.0f}s, RSS {rss_gib():.1f} GiB", flush=True)
 
     print(f"\n== [phase 2/3] binning pool by MITM (ground truth, reaches depth {args.left_depth + mrd}) ==", flush=True)

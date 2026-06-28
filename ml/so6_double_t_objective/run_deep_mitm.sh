@@ -3,11 +3,12 @@
 # Run this ON the large-memory machine (the binding is compiled with -march=native, so a
 # .so built elsewhere will SIGILL -- it must be compiled here).
 #
+# Defaults: generator=tt (even depths only), left-depth 12, depths 14/16/18 (capped at 18 so every
+# right build is <=6 -> bounded and fast; no more runaway right-8 builds hitting the timeout).
 # Tune via environment variables, e.g.:
-#   LEFT_DEPTH=12 DEPTHS="16 18 20" M=16 NCHAINS=400 TIMEOUT=600 ./run_deep_mitm.sh   # fast, reaches depth 20
-#   LEFT_DEPTH=13 DEPTHS="16 18 20 22 24" ./run_deep_mitm.sh                            # deeper, reaches depth 24
-# If the deepest depth OOMs, you still keep the shallower results (written incrementally) and
-# the pool cache (runs/deep_pool.npz); just re-run with smaller --depths or a larger LEFT_DEPTH.
+#   DEPTHS="16 18" NCHAINS=800 ./run_deep_mitm.sh        # more samples at the high end
+#   GENERATOR=t ./run_deep_mitm.sh                       # single-T (every depth) instead of even-only
+# Results/pool: runs/deep_results_tt.json, runs/deep_pool_tt.npz (written incrementally + resumable).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,8 +37,9 @@ fi
 echo "== deep MITM probe =="
 echo "repo            : $REPO"
 echo "python          : $("$PY" --version 2>&1)  ($PY)"
-echo "left-depth      : ${LEFT_DEPTH:-12}   depths: ${DEPTHS:-16 18 20}   (right capped at 8 -> reaches depth 20)"
-echo "m/state-per-dep : ${M:-16}   n-chains: ${NCHAINS:-400}   timeout/call: ${TIMEOUT:-600}s"
+echo "generator       : ${GENERATOR:-tt} (even depths only)   left-depth: ${LEFT_DEPTH:-12}"
+echo "depths          : ${DEPTHS:-14 16 18}   (capped at 18 -> right<=6, bounded/fast)"
+echo "m/state-per-dep : ${M:-20}   n-chains: ${NCHAINS:-500}   timeout/call: ${TIMEOUT:-120}s"
 echo "  (system dependency: a C++20 compiler and TBB -- e.g. 'apt install libtbb-dev g++')"
 echo
 
@@ -51,14 +53,15 @@ echo
 
 # --- run ---
 "$PY" deep_mitm_probe.py \
+    --generator "${GENERATOR:-tt}" \
     --left-depth "${LEFT_DEPTH:-12}" \
-    --depths ${DEPTHS:-16 18 20} \
-    --m "${M:-16}" \
-    --n-chains "${NCHAINS:-400}" \
-    --timeout "${TIMEOUT:-600}" \
+    --depths ${DEPTHS:-14 16 18} \
+    --m "${M:-20}" \
+    --n-chains "${NCHAINS:-500}" \
+    --timeout "${TIMEOUT:-120}" \
     ${MAXRD:+--max-right-depth "$MAXRD"} \
-    --out runs/deep_results.json \
-    --pool runs/deep_pool.npz
+    --out runs/deep_results_tt.json \
+    --pool runs/deep_pool_tt.npz
 
 echo
 echo "DONE.  Send back: ml/so6_double_t_objective/runs/deep_results.json"
