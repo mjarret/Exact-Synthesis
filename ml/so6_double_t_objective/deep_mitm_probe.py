@@ -32,12 +32,34 @@ Start with the defaults; if pool-gen or a depth OOMs, lower --depths / --max-rig
 raise --left-depth (more upfront RAM, cheaper per-target builds).
 """
 from __future__ import annotations
-import argparse, json, os, resource, time
+import argparse, json, os, resource, threading, time
 import numpy as np
 import readonly_lut
 
 NA = 165                                   # number of double-T generators
 IDENT = np.eye(6, dtype=np.uint32)
+_T0 = time.time()                          # wall clock for elapsed-time stamps
+
+
+def _el():
+    return time.time() - _T0
+
+
+class Heartbeat:
+    """Print a liveness line every `interval`s while a blocking/silent phase runs."""
+    def __init__(self, label, interval=15):
+        self.label, self.interval, self._stop = label, interval, threading.Event()
+        self._t = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            print(f"    ... {self.label}: +{_el():.0f}s elapsed, RSS {rss_gib():.1f} GiB", flush=True)
+
+    def __enter__(self):
+        self._t.start(); return self
+
+    def __exit__(self, *a):
+        self._stop.set()
 
 # Measured identity-rooted canonical single-T layer sizes d=0..10 (this codebase). Growth is
 # ~8x/level and still rising toward an asymptote ~9.8x; we extrapolate to project memory so a
@@ -128,7 +150,7 @@ def rss_gib():
 
 
 # ---- pool generation: random chains, MITM-binned by true optimal depth (resumable) ------
-def gen_pool(lut, want, left_depth, mrd, to, n_chains, per, chunk=16, seed0=0,
+def gen_pool(lut, want, left_depth, mrd, to, n_chains, per, chunk=8, seed0=0,
              cache="runs/deep_pool.npz"):
     os.makedirs(os.path.dirname(cache), exist_ok=True)
     max_k = max(want) // 2 + 3                                               # chain length to exceed deepest target
@@ -138,19 +160,25 @@ def gen_pool(lut, want, left_depth, mrd, to, n_chains, per, chunk=16, seed0=0,
         chains, depths = z["chains"].astype(np.uint32), z["depths"].astype(np.int64)
         print(f"  resuming pool from {cache}: {(depths != -2).sum()}/{len(depths)} chains binned", flush=True)
     else:
-        print(f"  generating {n_chains} random chains (k in [{ks.min()},{ks.max()}]) ...", flush=True)
-        chains = np.stack([chain(lut, int(ks[i]), seed0 + i) for i in range(n_chains)]).astype(np.uint32)
+        print(f"  [+{_el():.0f}s] generating {n_chains} random chains (k in [{ks.min()},{ks.max()}]) ...", flush=True)
+        with Heartbeat("generating chains"):
+            chains = np.stack([chain(lut, int(ks[i]), seed0 + i) for i in range(n_chains)]).astype(np.uint32)
         depths = np.full(n_chains, -2, np.int64)                                # -2 = not yet binned
     todo = np.where(depths == -2)[0]
+    t_start, done0 = time.time(), int((depths != -2).sum())
     for c0 in range(0, len(todo), chunk):
         idx = todo[c0:c0 + chunk]
         t = time.time()
         depths[idx] = mitm(lut, chains[idx], mrd, to)
         np.savez(cache, chains=chains, depths=depths)
-        done = (depths != -2).sum()
-        hist = {int(d): int((depths == d).sum()) for d in sorted(set(depths[depths >= 0].tolist()))}
-        print(f"  binned {done}/{n_chains}  (+{len(idx)} in {time.time()-t:.0f}s, RSS {rss_gib():.1f}G)  "
-              f"depth hist so far: {hist}", flush=True)
+        done = int((depths != -2).sum())
+        rate = max(done - done0, 1) / max(time.time() - t_start, 1e-6)       # chains/s over this run
+        eta = (n_chains - done) / rate
+        bins = {int(d): int((depths == d).sum()) for d in want}              # the bins we actually want
+        miss = int((depths == -1).sum())                                    # >cap (deeper than reachable) / timeout
+        print(f"  [+{_el():.0f}s] binned {done}/{n_chains} ({100*done/n_chains:.0f}%)  "
+              f"+{len(idx)} in {time.time()-t:.1f}s (~{eta:.0f}s left)  "
+              f"target bins {bins}  dropped>{left_depth+mrd}:{miss}  RSS {rss_gib():.1f}G", flush=True)
     pools = {d: chains[depths == d][:per] for d in want if (depths == d).sum() >= 3}
     return pools, {int(d): int((depths == d).sum()) for d in sorted(set(depths[depths >= 0].tolist()))}
 
@@ -162,6 +190,8 @@ def analyze(lut, states, D, left_depth, to, topk=8, do_quad=True):
     delta = lde_feats(succ.reshape(n * NA, 108)).reshape(n, NA) - lde_states(states)[:, None]
     red_cap = max(0, (D - 2) - left_depth)                                      # confirm D-2 cheaply
     quad_cap = max(0, (D - 4) - left_depth)
+    print(f"  [+{_el():.0f}s] [analyze depth {D}] {n} states  (reducer right-cap {red_cap}, "
+          f"quad right-cap {quad_cap})", flush=True)
     with_red, with_quad, found_deltas = 0, 0, []
     for i in range(n):
         order = np.argsort(delta[i])[:topk]                                     # most promising first
@@ -169,17 +199,23 @@ def analyze(lut, states, D, left_depth, to, topk=8, do_quad=True):
         cd = mitm(lut, cs, red_cap, to)
         red_local = (cd >= 0) & (cd < D)                                        # found in cap => reduced
         red = order[red_local]
+        quad_hit, best = False, None
         if red.size:
             with_red += 1
             found_deltas += delta[i, red].tolist()
+            best = int(delta[i, red].min())                                     # best (most negative) reducer delta_LDE
             if do_quad:                                                         # follow the first reducer
                 r = int(red[0])
                 g = expand_all(lut, features_to_states(succ[i, r][None]))[0]    # (165,108) grandchildren
                 gdelta = lde_feats(g) - lde_states(features_to_states(succ[i, r][None]))[0]
                 go = np.argsort(gdelta)[:topk]
                 gd = mitm(lut, features_to_states(g[go]), quad_cap, to)
-                if ((gd >= 0) & (gd <= D - 4)).any():
-                    with_quad += 1
+                quad_hit = bool(((gd >= 0) & (gd <= D - 4)).any())
+                with_quad += int(quad_hit)
+        print(f"      state {i+1:>2}/{n}: reducer={'YES' if red.size else 'no '}"
+              f"  ΔLDE={'%+d' % best if best is not None else ' . '}"
+              f"  quadT={'yes' if quad_hit else '-'}"
+              f"   (running: {with_red}/{i+1} reduce, {with_quad}/{i+1} quad)", flush=True)
     dd = np.array(found_deltas)
     dist = {int(v): int((dd == v).sum()) for v in sorted(set(dd.tolist()))} if dd.size else {}
     return {
@@ -225,18 +261,22 @@ def main():
             "results": []}
 
     t0 = time.time()
-    print(f"building left LUT to depth {args.left_depth} (cached layers {cached}) ...", flush=True)
-    lut = readonly_lut.ReadOnlyLUT(max_t_depth=args.left_depth, threads=0, progress_mode="off",
-                                   verbose_build=False, debug=False, log_calls=False,
-                                   cached_depths=cached)
-    print(f"  left LUT ready in {time.time()-t0:.0f}s, RSS {rss_gib():.1f} GiB\n"
-          f"binning pool (MITM ground truth, reaches depth {args.left_depth + mrd}) ...", flush=True)
+    print(f"\n== [phase 1/3] building left LUT to single-T depth {args.left_depth} (cached {cached}) ==\n"
+          f"  (silent C++ build; heartbeat every 15s -- watch RSS climb toward "
+          f"~{_gb(sum(project_layer_sizes(args.left_depth)[:args.left_depth+1])):.0f} GB)", flush=True)
+    with Heartbeat("building left LUT"):
+        lut = readonly_lut.ReadOnlyLUT(max_t_depth=args.left_depth, threads=0, progress_mode="off",
+                                       verbose_build=False, debug=False, log_calls=False,
+                                       cached_depths=cached)
+    print(f"  [+{_el():.0f}s] left LUT ready in {time.time()-t0:.0f}s, RSS {rss_gib():.1f} GiB", flush=True)
 
+    print(f"\n== [phase 2/3] binning pool by MITM (ground truth, reaches depth {args.left_depth + mrd}) ==", flush=True)
     pools, hist = gen_pool(lut, want, args.left_depth, mrd, args.timeout, args.n_chains, args.m,
                            cache=args.pool)
     meta["pool_depth_histogram"] = hist
-    print(f"\npool: { {d: len(v) for d, v in pools.items()} }   (full hist: {hist})\n", flush=True)
+    print(f"  [+{_el():.0f}s] pool ready: { {d: len(v) for d, v in pools.items()} }   (full hist: {hist})", flush=True)
 
+    print(f"\n== [phase 3/3] analyzing structure per depth ==", flush=True)
     print(f"  {'depth':>5} {'n':>4} {'%1move':>7} {'%quadT':>7}  reducer delta_LDE dist")
     for D in sorted(pools):
         t = time.time()
