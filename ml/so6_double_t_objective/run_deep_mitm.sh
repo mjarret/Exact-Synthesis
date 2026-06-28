@@ -13,18 +13,29 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 export EXACT_SYNTHESIS_DIR="$REPO"
+
+# --- resolve a python that has numpy + pybind11 (auto-create a venv if needed) ---
+# Debian/Ubuntu mark system python as "externally managed" (PEP 668), so we never
+# pip-install into it; we use the caller's $PYTHON if it already has the deps, else
+# build a local venv at .venv-deep. Override with PYTHON=/path/to/python.
 PY="${PYTHON:-python3}"
+if ! "$PY" -c "import numpy, pybind11" 2>/dev/null; then
+    VENV="$HERE/.venv-deep"
+    if [ ! -x "$VENV/bin/python" ]; then
+        echo "deps missing in '$PY'; creating venv at $VENV ..."
+        "$PY" -m venv "$VENV" 2>/dev/null || python3 -m venv "$VENV" || {
+            echo "ERROR: 'python3 -m venv' failed. Run:  sudo apt install -y python3-venv python3-full"; exit 1; }
+    fi
+    "$VENV/bin/python" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
+    "$VENV/bin/python" -m pip install -q numpy pybind11 || { echo "ERROR: pip install into venv failed"; exit 1; }
+    PY="$VENV/bin/python"
+fi
 
 echo "== deep MITM probe =="
 echo "repo            : $REPO"
-echo "python          : $($PY --version 2>&1)"
+echo "python          : $("$PY" --version 2>&1)  ($PY)"
 echo "left-depth      : ${LEFT_DEPTH:-12}   depths: ${DEPTHS:-16 18 20}   (right capped at 8 -> reaches depth 20)"
 echo "m/state-per-dep : ${M:-16}   n-chains: ${NCHAINS:-400}   timeout/call: ${TIMEOUT:-600}s"
-echo
-
-# --- dependencies (numpy + pybind11 in the active python; TBB as a system lib) ---
-$PY -c "import pybind11" 2>/dev/null || $PY -m pip install pybind11
-$PY -c "import numpy"    2>/dev/null || $PY -m pip install numpy
 echo "  (system dependency: a C++20 compiler and TBB -- e.g. 'apt install libtbb-dev g++')"
 echo
 
@@ -33,11 +44,11 @@ cd "$HERE"
 rm -rf build
 rm -f readonly_lut*.so
 echo "building readonly_lut (this includes the MITM oracle additions) ..."
-$PY setup.py build_ext --inplace
+"$PY" setup.py build_ext --inplace
 echo
 
 # --- run ---
-$PY deep_mitm_probe.py \
+"$PY" deep_mitm_probe.py \
     --left-depth "${LEFT_DEPTH:-12}" \
     --depths ${DEPTHS:-16 18 20} \
     --m "${M:-16}" \

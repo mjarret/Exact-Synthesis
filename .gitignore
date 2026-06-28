@@ -74,3 +74,5 @@ mitms/
 
 # local convenience bundle (not code)
 deep_mitm_bundle.tar.gz
+.venv-deep/
+.venv*/
